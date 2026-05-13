@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.cache/
+.probe/
+*.log
+*.tgz
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.claude/
+.cursor/
+AGENTS.md
+.trellis/.developer
+.trellis/.runtime/
+.trellis/workspace/
