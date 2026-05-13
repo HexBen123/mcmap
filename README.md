@@ -1,33 +1,17 @@
 # mcmap
 
-Local MCP server for Minecraft mapping lookup.
+面向 Minecraft Mod 开发的映射表查询 MCP 服务。
 
-This project exists because the remote Linkie MCP endpoint can initialize but may time out during tool calls. The local server keeps the same four Linkie-compatible tool names and resolves mapping data from upstream Minecraft, Fabric, Forge, NeoForge, Parchment, and Legacy Fabric sources with a local file cache.
+mcmap 是一个基于 stdio 的 MCP 服务，帮助 AI 编程工具在编写 Mod 时查询 Minecraft 映射表、符号名称和各类 Mod Loader 依赖版本。它直接从 Minecraft、Fabric、Forge、NeoForge、Parchment 和 Legacy Fabric 等上游数据源解析数据，并使用用户级缓存目录保存网络响应。
 
-## Requirements
+## 环境要求
 
-- Node.js 18.14 or newer.
-- PowerShell 7 on Windows is supported.
+- Node.js 18.14 或更新版本。
+- Windows 下支持 PowerShell 7。
 
-## Install, Build, and Run
+## 安装与注册
 
-```powershell
-npm install
-npm run build
-npm run start
-```
-
-Run the local MCP smoke test:
-
-```powershell
-npm run smoke
-```
-
-The smoke test starts `dist/index.js`, performs MCP `initialize` and `tools/list`, then verifies namespace version listing, Yarn, Intermediary, Mojmap, legacy MCP/SRG, and loader dependency queries.
-
-## Install And Register
-
-Install the published package globally and register the binary:
+全局安装 npm 包后，可以把 `mcmap` 二进制命令注册给 Codex 或 Claude Code：
 
 ```powershell
 npm install -g @hexben/mcmap@latest
@@ -35,47 +19,85 @@ codex mcp add mcmap -- mcmap
 claude mcp add mcmap -- mcmap
 ```
 
-Use `npx` when you want a one-off registration without a global install:
+如果你的 MCP 客户端使用带 `mcpServers` 的 JSON 配置文件，可以写成：
+
+```json
+{
+  "mcpServers": {
+    "mcmap": {
+      "command": "mcmap"
+    }
+  }
+}
+```
+
+如果不想全局安装，可以用 `npx` 注册：
 
 ```powershell
 codex mcp add mcmap -- npx -y @hexben/mcmap@latest
 claude mcp add mcmap -- npx -y @hexben/mcmap@latest
 ```
 
-For local development from this checkout, build first and register the generated file directly:
+对应的 `mcpServers` JSON 配置是：
+
+```json
+{
+  "mcpServers": {
+    "mcmap": {
+      "command": "npx",
+      "args": ["-y", "@hexben/mcmap@latest"]
+    }
+  }
+}
+```
+
+## 本地开发
+
+从源码运行时，先安装依赖并构建：
+
+```powershell
+npm install
+npm run build
+npm run start
+```
+
+本地开发时可以直接注册构建产物：
 
 ```powershell
 npm run build
 codex mcp add mcmap -- node "dist\index.js"
 ```
 
-If the remote `linkie` MCP entry is still configured, keep this local server under the separate name `mcmap` so both entries are distinguishable. If you want to disable the remote entry, remove or comment out the remote server block in the Codex MCP config that contains:
+对应的 `mcpServers` JSON 配置是：
 
 ```json
 {
   "mcpServers": {
-    "linkie": {
-      "url": "https://mc-linkie.mcp.codelib.space/mcp"
+    "mcmap": {
+      "command": "node",
+      "args": ["dist/index.js"]
     }
   }
 }
 ```
 
-Before publishing, run a packaging dry run and confirm the tarball only contains the built output and package metadata:
+运行本地 MCP 冒烟测试：
 
 ```powershell
-npm pack --dry-run
+npm run smoke
 ```
 
-## Tools
+这个测试会启动 `dist/index.js`，执行 MCP `initialize` 和 `tools/list`，并验证 Mojmap、Yarn、Intermediary、Legacy MCP/SRG 以及 Loader 版本查询。
+
+## 可用工具
 
 ### `list_namespaces`
 
-Returns supported mapping namespaces and the local cache root.
+列出支持的映射命名空间、数据源说明和本机缓存根目录。
 
 ### `get_namespace_versions`
 
-Returns available versions for:
+查询指定命名空间支持的 Minecraft 版本。当前支持：
 
 - `mojmap` / `official`
 - `intermediary`
@@ -85,9 +107,9 @@ Returns available versions for:
 
 ### `search_mapping`
 
-Searches classes, methods, fields, and parameters where the backing source exposes them.
+搜索类、方法、字段和参数名称。结果会尽量包含 owner class、descriptor、obfuscated、official、mojmap、intermediary、yarn、srg、mcp 等可获得的名称。
 
-Common examples:
+Yarn 查询示例：
 
 ```json
 {
@@ -97,6 +119,8 @@ Common examples:
   "limit": 5
 }
 ```
+
+Legacy MCP/SRG 查询示例：
 
 ```json
 {
@@ -111,42 +135,68 @@ Common examples:
 
 ### `get_loader_versions`
 
-Returns recent dependency coordinates for:
+查询 Mod Loader 依赖坐标。当前支持：
 
 - `fabric`
 - `forge`
 - `neoforge`
 - `legacy-fabric`
 
-The result is grouped by Minecraft version where the upstream source exposes many loader builds for the same game version.
+返回结果会按 Minecraft 版本分组，并尽量给出可直接放进 Gradle 的依赖坐标。
 
-## Data Sources
+## 数据源
 
-| Area | Source |
+| 类型 | 数据源 |
 | --- | --- |
-| Mojmap | Mojang version manifest and official client/server mapping downloads |
+| Mojmap | Mojang version manifest 和官方 client/server mapping 下载 |
 | Yarn | Fabric Maven `net.fabricmc:yarn` Tiny v2 artifacts |
 | Intermediary | Fabric Maven `net.fabricmc:intermediary` Tiny v2 artifacts |
-| MCP/SRG | Forge Maven MCPConfig, MCP stable/snapshot CSV, and historical MCP SRG/CSRG artifacts |
+| MCP/SRG | Forge Maven MCPConfig、MCP stable/snapshot CSV、历史 MCP SRG/CSRG artifacts |
 | Parchment | ParchmentMC Maven metadata |
-| Fabric loader | Fabric Meta v2 and Fabric Maven metadata |
-| Forge loader | Forge Maven `net.minecraftforge:forge` metadata |
-| NeoForge loader | NeoForge Maven `net.neoforged:neoforge` metadata plus Mojang release manifest for Minecraft-version inference |
-| Legacy Fabric loader | Legacy Fabric Meta v2 and Legacy Fabric Maven metadata |
+| Fabric Loader | Fabric Meta v2 和 Fabric Maven metadata |
+| Forge Loader | Forge Maven `net.minecraftforge:forge` metadata |
+| NeoForge Loader | NeoForge Maven `net.neoforged:neoforge` metadata，并结合 Mojang release manifest 推断 Minecraft 版本 |
+| Legacy Fabric Loader | Legacy Fabric Meta v2 和 Legacy Fabric Maven metadata |
 
-## Cache
+## 缓存目录
 
-Network responses are cached under a user-level directory:
+网络响应会缓存到用户级目录：
 
 ```text
 Windows: %LOCALAPPDATA%\mcmap\
-Linux/macOS: $XDG_CACHE_HOME/mcmap/ or ~/.cache/mcmap/
+Linux/macOS: $XDG_CACHE_HOME/mcmap/ 或 ~/.cache/mcmap/
 ```
 
-The cache stays outside the project so global installs do not create cache files in every checkout. Removing that directory forces the server to refetch upstream metadata and artifacts on the next query.
+缓存不会写到项目目录内，因此全局安装后不会在不同工作目录里到处生成 `.cache`。删除这个缓存目录后，下一次查询会重新拉取上游 metadata 和 mapping artifacts。
 
-## Current Limitations
+## 开发与发布检查
 
-- `parchment` currently exposes version metadata. Full Parchment parameter and Javadoc search is not implemented yet.
-- `search_mapping` loads one namespace at a time. Cross-namespace joining is only performed where the source naturally contains both names, such as Yarn Tiny v2 and MCP/SRG plus MCP CSV.
-- Loader metadata depends on upstream Maven and meta APIs. If an upstream source changes versioning format, the parser should be adjusted rather than fabricating results.
+构建项目：
+
+```powershell
+npm run build
+```
+
+检查 TypeScript：
+
+```powershell
+npm run check
+```
+
+运行 MCP 冒烟测试：
+
+```powershell
+npm run smoke
+```
+
+发布前可以先做 dry run，确认 npm tarball 只包含 `dist/`、`README.md` 和 `package.json`：
+
+```powershell
+npm pack --dry-run
+```
+
+## 当前限制
+
+- `parchment` 当前主要暴露版本 metadata，完整参数名和 Javadoc 搜索仍是增量支持范围。
+- `search_mapping` 一次只加载一个命名空间。只有源数据天然包含多套名称时才会做跨命名空间合并，例如 Yarn Tiny v2、MCP/SRG 和 MCP CSV。
+- Loader metadata 依赖上游 Maven 和 meta API。如果上游版本格式变化，应调整解析器，而不是伪造结果。

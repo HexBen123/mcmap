@@ -1,14 +1,14 @@
-# Build complete local Linkie MCP server
+# Build complete mcmap MCP server
 
 ## Goal
 
-Build a local, stdio-based MCP server that provides Linkie-style Minecraft mapping lookup tools without depending on the unstable remote `https://mc-linkie.mcp.codelib.space/mcp` service.
+Build a stdio-based MCP server that provides Minecraft mapping lookup tools and loader dependency version queries for AI coding agents.
 
 The server should let AI coding agents query Minecraft mappings and loader dependency versions while developing mods across modern and legacy ecosystems.
 
 ## Requirements
 
-- Expose the same four tool names as the remote Linkie MCP:
+- Expose four stable MCP tools:
   - `list_namespaces`
   - `get_namespace_versions`
   - `search_mapping`
@@ -40,7 +40,7 @@ The server should let AI coding agents query Minecraft mappings and loader depen
 
 - [x] `npm run build` completes successfully.
 - [x] The server can be launched over stdio with Node.js on Windows.
-- [x] `tools/list` exposes all four Linkie-compatible tools.
+- [x] `tools/list` exposes all four mcmap tools.
 - [x] `list_namespaces` reports supported namespaces and their backing sources.
 - [x] `get_namespace_versions` returns stable/snapshot or available-version information for `mojmap`, `intermediary`, `yarn`, `parchment`, and `mcp`.
 - [x] `search_mapping` can return useful class/method/field results for at least:
@@ -55,4 +55,4 @@ The server should let AI coding agents query Minecraft mappings and loader depen
 ## Notes
 
 - The user explicitly prefers completeness over speed and wants legacy MCP/SRG included in this first implementation.
-- The existing remote Linkie MCP times out during tool calls, so this local server should avoid depending on that remote service.
+- The server should use authoritative upstream mapping and loader metadata sources directly.

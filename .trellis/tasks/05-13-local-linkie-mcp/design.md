@@ -2,7 +2,7 @@
 
 ## Overview
 
-The local Linkie MCP server is a TypeScript Node.js project using the official Model Context Protocol TypeScript SDK over stdio. It exposes Linkie-compatible tool names while using local parsing and caching for mapping artifacts.
+mcmap is a TypeScript Node.js project using the official Model Context Protocol TypeScript SDK over stdio. It exposes Minecraft mapping and loader metadata lookup tools while using local parsing and caching for mapping artifacts.
 
 The implementation has three layers:
 
@@ -223,7 +223,7 @@ Returns available versions for a namespace:
 
 ### search_mapping
 
-Inputs should remain compatible with the remote Linkie MCP:
+Inputs should remain stable and simple for MCP clients:
 
 - `query`
 - `namespace`

@@ -68,5 +68,5 @@
 ## 8. Codex Integration
 
 - [x] Document `npm install -g @hexben/mcmap@latest`, `npx -y @hexben/mcmap@latest`, Codex, and Claude Code registration commands.
-- [x] Explain how to disable the remote `linkie` entry if both exist.
+- [x] Document direct `mcpServers` JSON config examples.
 - [x] Document user-level cache location and cleanup guidance.
