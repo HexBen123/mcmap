@@ -1,6 +1,6 @@
 {
   "name": "@hexben/mcmap",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "MCP server for Minecraft mappings and mod loader versions",
   "main": "dist/index.js",
   "bin": {
