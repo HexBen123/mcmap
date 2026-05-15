@@ -34,11 +34,41 @@ export type MatchReason =
   | "descriptor_match"
   | "path_substring_match";
 
+export type AssistedCandidateReason =
+  | "split_owner_member"
+  | "owner_leaf_match"
+  | "member_exact_after_split"
+  | "member_related_after_split"
+  | "owner_related_member"
+  | "legacy_alias_match";
+
+export type AssistedCandidateConfidence = "high" | "medium" | "low";
+
 export interface SearchResult extends MappingRecord {
   score: number;
   matchReasons: MatchReason[];
   matchedNames: string[];
   readableDescriptor?: string;
+}
+
+export interface QueryAnalysis {
+  tokens: string[];
+  ownerLikeTokens: string[];
+  memberLikeTokens: string[];
+  descriptorLikeTokens: string[];
+  mode: "strict" | "assisted";
+}
+
+export interface RelatedCandidate {
+  confidence: AssistedCandidateConfidence;
+  reasons: AssistedCandidateReason[];
+  mapping: SearchResult;
+}
+
+export interface SearchResponse {
+  results: SearchResult[];
+  queryAnalysis?: QueryAnalysis;
+  relatedCandidates?: RelatedCandidate[];
 }
 
 export interface SearchOptions {
@@ -51,6 +81,7 @@ export interface SearchOptions {
   allowFields: boolean;
   translateMode: "none" | "ab" | "ba";
   format: "json" | "human";
+  assist?: boolean;
 }
 
 export interface VersionList {

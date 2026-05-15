@@ -1,9 +1,13 @@
 import type {
+  AssistedCandidateReason,
   MappingKind,
   MappingRecord,
   MatchReason,
+  QueryAnalysis,
+  RelatedCandidate,
   Namespace,
   SearchOptions,
+  SearchResponse,
   SearchResult,
 } from "./types.js";
 import { loadIntermediary, loadYarn } from "./sources/fabric.js";
@@ -20,7 +24,28 @@ interface ScoredRecord {
 }
 
 export async function searchMappings(options: SearchOptions): Promise<SearchResult[]> {
+  return (await searchMappingsWithAssistance(options)).results;
+}
+
+export async function searchMappingsWithAssistance(options: SearchOptions): Promise<SearchResponse> {
   const records = await loadRecordsForNamespace(options.namespace, options.version);
+  const results = searchLoadedRecords(records, options);
+
+  if (!options.assist) {
+    return { results };
+  }
+
+  const queryAnalysis = analyzeQuery(options.query, "assisted");
+  const relatedCandidates = buildRelatedCandidates(records, options, results, queryAnalysis);
+
+  return {
+    results,
+    queryAnalysis,
+    relatedCandidates,
+  };
+}
+
+function searchLoadedRecords(records: MappingRecord[], options: SearchOptions): SearchResult[] {
   const query = normalize(options.query);
   const allowed = allowedKinds(options);
   const descriptorNames = buildDescriptorNameMap(records);
@@ -37,6 +62,201 @@ export async function searchMappings(options: SearchOptions): Promise<SearchResu
       matchedNames,
       readableDescriptor: readableDescriptor(record.descriptor, descriptorNames),
     }));
+}
+
+function analyzeQuery(query: string, mode: QueryAnalysis["mode"]): QueryAnalysis {
+  const tokens = splitQueryTokens(query);
+  const descriptorLikeTokens = tokens.filter(looksLikeDescriptorToken);
+  const ownerLikeTokens = tokens.filter((token) => !looksLikeDescriptorToken(token) && looksLikeOwnerToken(token));
+  const memberLikeTokens = tokens.filter(
+    (token) => !looksLikeDescriptorToken(token) && !ownerLikeTokens.includes(token),
+  );
+
+  return {
+    tokens,
+    ownerLikeTokens,
+    memberLikeTokens,
+    descriptorLikeTokens,
+    mode,
+  };
+}
+
+function buildRelatedCandidates(
+  records: MappingRecord[],
+  options: SearchOptions,
+  primaryResults: SearchResult[],
+  queryAnalysis: QueryAnalysis,
+): RelatedCandidate[] {
+  const allowed = allowedKinds(options);
+  const descriptorNames = buildDescriptorNameMap(records);
+  const primaryKeys = new Set(primaryResults.map(resultKey));
+  const candidates = new Map<string, RelatedCandidate>();
+  const ownerTokens = queryAnalysis.ownerLikeTokens;
+  const memberTokens =
+    queryAnalysis.memberLikeTokens.length > 0
+      ? queryAnalysis.memberLikeTokens
+      : queryAnalysis.tokens.filter((token) => !ownerTokens.includes(token));
+
+  for (const record of records) {
+    if (!allowed.has(record.kind)) {
+      continue;
+    }
+
+    const ownerMatch = bestOwnerTokenMatch(record, ownerTokens);
+    const memberMatch = bestMemberTokenMatch(record, memberTokens, options.namespace, options.translateMode);
+
+    if (ownerMatch && memberMatch) {
+      addRelatedCandidate(candidates, record, descriptorNames, primaryKeys, {
+        score: memberMatch.exact ? 890 : 760,
+        reasons: memberMatch.exact
+          ? ["split_owner_member", "owner_leaf_match", "member_exact_after_split"]
+          : ["split_owner_member", "owner_leaf_match", "member_related_after_split"],
+        confidence: memberMatch.exact ? "high" : "medium",
+        matchedNames: memberMatch.matchedNames,
+      });
+      continue;
+    }
+
+    if (ownerMatch && record.kind !== "class") {
+      addRelatedCandidate(candidates, record, descriptorNames, primaryKeys, {
+        score: 520,
+        reasons: ["owner_related_member"],
+        confidence: "medium",
+        matchedNames: [],
+      });
+      continue;
+    }
+
+    if (memberMatch && ownerTokens.length > 0) {
+      addRelatedCandidate(candidates, record, descriptorNames, primaryKeys, {
+        score: memberMatch.exact ? 640 : 480,
+        reasons: memberMatch.exact ? ["member_exact_after_split"] : ["member_related_after_split"],
+        confidence: "low",
+        matchedNames: memberMatch.matchedNames,
+      });
+    }
+  }
+
+  return [...candidates.values()]
+    .sort(compareRelatedCandidates)
+    .slice(0, options.limit);
+}
+
+function addRelatedCandidate(
+  candidates: Map<string, RelatedCandidate>,
+  record: MappingRecord,
+  descriptorNames: Map<string, string>,
+  primaryKeys: Set<string>,
+  candidate: {
+    score: number;
+    reasons: AssistedCandidateReason[];
+    confidence: RelatedCandidate["confidence"];
+    matchedNames: string[];
+  },
+): void {
+  const key = resultKey(record);
+  if (primaryKeys.has(key)) {
+    return;
+  }
+
+  const mapping: SearchResult = {
+    ...record,
+    score: candidate.score,
+    matchReasons: [],
+    matchedNames: uniqueStrings(candidate.matchedNames),
+    readableDescriptor: readableDescriptor(record.descriptor, descriptorNames),
+  };
+  const existing = candidates.get(key);
+  if (!existing || compareRelatedCandidates({ confidence: candidate.confidence, reasons: candidate.reasons, mapping }, existing) < 0) {
+    candidates.set(key, {
+      confidence: candidate.confidence,
+      reasons: uniqueReasons(candidate.reasons),
+      mapping,
+    });
+  }
+}
+
+function compareRelatedCandidates(a: RelatedCandidate, b: RelatedCandidate): number {
+  const confidenceOrder = confidenceRank(a.confidence) - confidenceRank(b.confidence);
+  if (confidenceOrder !== 0) {
+    return confidenceOrder;
+  }
+  if (a.mapping.score !== b.mapping.score) {
+    return b.mapping.score - a.mapping.score;
+  }
+  return stableRecordKey(a.mapping).localeCompare(stableRecordKey(b.mapping));
+}
+
+function confidenceRank(confidence: RelatedCandidate["confidence"]): number {
+  if (confidence === "high") {
+    return 0;
+  }
+  if (confidence === "medium") {
+    return 1;
+  }
+  return 2;
+}
+
+function bestOwnerTokenMatch(record: MappingRecord, ownerTokens: string[]): string | undefined {
+  if (ownerTokens.length === 0) {
+    return undefined;
+  }
+  const values = uniqueStrings([
+    record.owner,
+    ...Object.values(record.names).filter((value): value is string => Boolean(value)),
+  ]);
+  return ownerTokens.find((token) => values.some((value) => ownerTokenMatches(value, token)));
+}
+
+function ownerTokenMatches(value: string, token: string): boolean {
+  const normalizedToken = normalize(token);
+  const normalizedValue = normalize(value);
+  const normalizedLeaf = normalize(leafName(value));
+  return (
+    normalizedValue === normalizedToken ||
+    normalizedLeaf === normalizedToken ||
+    normalizedValue.endsWith(`/${normalizedToken}`) ||
+    normalizedValue.endsWith(`.${normalizedToken}`)
+  );
+}
+
+function bestMemberTokenMatch(
+  record: MappingRecord,
+  memberTokens: string[],
+  namespace: string,
+  translateMode: SearchOptions["translateMode"],
+): { exact: boolean; matchedNames: string[] } | undefined {
+  if (memberTokens.length === 0 || record.kind === "class") {
+    return undefined;
+  }
+
+  const primaryNamespace = primaryNamespaceFor(namespace);
+  const primaryName = primaryNamespace ? record.names[primaryNamespace] : undefined;
+  const alternateNames = Object.entries(record.names)
+    .filter(([name, value]) => name !== primaryNamespace && Boolean(value))
+    .map(([, value]) => value as string);
+  const candidates = searchableNames(primaryName, alternateNames, translateMode);
+  const matchedNames: string[] = [];
+  let exact = false;
+
+  for (const token of memberTokens) {
+    const normalizedToken = normalize(token);
+    for (const candidate of candidates) {
+      const normalizedCandidate = normalize(candidate);
+      const normalizedLeaf = normalize(leafName(candidate));
+      if (normalizedCandidate === normalizedToken || normalizedLeaf === normalizedToken) {
+        exact = true;
+        matchedNames.push(candidate);
+      } else if (normalizedLeaf.includes(normalizedToken) || normalizedCandidate.includes(normalizedToken)) {
+        matchedNames.push(candidate);
+      }
+    }
+  }
+
+  if (matchedNames.length === 0) {
+    return undefined;
+  }
+  return { exact, matchedNames: uniqueStrings(matchedNames) };
 }
 
 async function loadRecordsForNamespace(namespace: string, version: string): Promise<MappingRecord[]> {
@@ -217,6 +437,10 @@ function stableRecordKey(record: MappingRecord): string {
   ].join("|");
 }
 
+function resultKey(record: MappingRecord): string {
+  return stableRecordKey(record);
+}
+
 function primaryNamespaceFor(namespace: string): Namespace | undefined {
   switch (namespace.toLowerCase()) {
     case "mojmap":
@@ -294,6 +518,10 @@ function uniqueStrings(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => Boolean(value)))];
 }
 
+function uniqueReasons(values: AssistedCandidateReason[]): AssistedCandidateReason[] {
+  return [...new Set(values)];
+}
+
 function leafName(value: string | undefined): string {
   if (!value) {
     return "";
@@ -303,6 +531,34 @@ function leafName(value: string | undefined): string {
 
 function normalize(value: string | undefined): string {
   return value?.toLowerCase() ?? "";
+}
+
+function splitQueryTokens(query: string): string[] {
+  return query
+    .trim()
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+}
+
+function looksLikeDescriptorToken(token: string): boolean {
+  return token.startsWith("(") || /^L[^;]+;$/.test(token) || /^\[[BCDFIJSZL]/.test(token);
+}
+
+function looksLikeOwnerToken(token: string): boolean {
+  if (token.includes("/") || token.includes(".")) {
+    return true;
+  }
+  if (/^class_\d+$/.test(token)) {
+    return true;
+  }
+  if (/^(method|field|func|p)_\d/.test(token)) {
+    return false;
+  }
+  if (/^[a-z]{1,4}(?:\$[a-z0-9_]+)?$/.test(token)) {
+    return false;
+  }
+  return /^[A-Z]/.test(token) || token.includes("$");
 }
 
 function tokenize(value: string): string[] {

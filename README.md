@@ -124,6 +124,13 @@ npm run smoke
 
 如果需要人类快速查看，可显式请求 `format: "human"`；默认仍保持 JSON。
 
+如果查询是“类名 + 成员名”这类不够精确的短语，可以显式打开 `assist: true`。辅助发现不会把低置信候选混进主 `results`，而是额外返回：
+
+- `queryAnalysis`：工具如何拆分 owner-like token、member-like token 和 descriptor-like token。
+- `relatedCandidates`：辅助候选列表，每项包含 `confidence`、`reasons` 和完整的 `mapping`。
+
+这个模式适合 AI 在老版本 Forge/MCP 或不确定名称时继续探路。它是辅助发现，不是权威重映射；真正的精确结果仍以主 `results` 为准。
+
 Yarn 查询示例：
 
 ```json
@@ -159,6 +166,30 @@ Legacy MCP/SRG 查询示例：
   "allow_methods": true,
   "allow_fields": false,
   "translate_mode": "ba"
+}
+```
+
+辅助发现示例：
+
+```json
+{
+  "query": "MinecraftServer getPlayerManager",
+  "namespace": "yarn",
+  "version": "1.21.1",
+  "limit": 5,
+  "assist": true
+}
+```
+
+老版本 Forge/MCP 辅助发现示例：
+
+```json
+{
+  "query": "EntityPlayerSP updateEntityActionState",
+  "namespace": "mcp",
+  "version": "1.7.10",
+  "limit": 5,
+  "assist": true
 }
 ```
 
@@ -236,4 +267,5 @@ npm pack --dry-run
 
 - `parchment` 当前主要暴露版本 metadata，完整参数名和 Javadoc 搜索仍是增量支持范围。
 - `search_mapping` 仍以单一主命名空间为入口，但会在可安全对齐时做有限增强，例如 Yarn / Intermediary 之间的补充命名，以及 MCP/SRG 与 MCP CSV 的合并。
+- `assist: true` 只做辅助发现。它会返回相关候选和理由，但不会保证候选就是唯一或最终答案；老版本 MCP 尤其可能存在同名方法、多 owner 和多来源 artifact。
 - Loader metadata 依赖上游 Maven 和 meta API。如果上游版本格式变化，应调整解析器，而不是伪造结果。

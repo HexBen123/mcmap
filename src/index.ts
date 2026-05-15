@@ -2,8 +2,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { asError, asJsonText, formatMappingRecord, formatMappingRecordHuman } from "./format.js";
-import { searchMappings } from "./search.js";
+import {
+  asError,
+  asJsonText,
+  formatMappingRecord,
+  formatMappingRecordHuman,
+  formatRelatedCandidate,
+  formatRelatedCandidateHuman,
+} from "./format.js";
+import { searchMappingsWithAssistance } from "./search.js";
 import { getIntermediaryVersionList, getYarnVersionList } from "./sources/fabric.js";
 import { getLegacyYarnVersionList } from "./sources/legacyFabric.js";
 import { getEcosystemRecommendations, getLoaderVersions } from "./sources/loaders.js";
@@ -129,11 +136,15 @@ server.registerTool(
       allow_fields: z.boolean().default(true).describe("是否包含字段结果"),
       translate_mode: z.enum(["none", "ab", "ba"]).default("none").describe("兼容字段，当前搜索模式下保留"),
       format: z.enum(["json", "human"]).default("json").describe("输出格式，默认 json"),
+      assist: z
+        .boolean()
+        .default(false)
+        .describe("启用可选的 AI 辅助发现。低置信候选会放在 relatedCandidates，不会混入主 results。"),
     }),
   },
   async (args) => {
     try {
-      const records = await searchMappings({
+      const search = await searchMappingsWithAssistance({
         query: args.query,
         namespace: args.namespace,
         version: args.version,
@@ -143,22 +154,27 @@ server.registerTool(
         allowFields: args.allow_fields,
         translateMode: args.translate_mode,
         format: args.format,
+        assist: args.assist,
       });
       if (args.format === "human") {
         return asJsonText({
           query: args.query,
           namespace: args.namespace,
           version: args.version,
-          count: records.length,
-          results: records.map(formatMappingRecordHuman),
+          count: search.results.length,
+          results: search.results.map(formatMappingRecordHuman),
+          queryAnalysis: search.queryAnalysis,
+          relatedCandidates: search.relatedCandidates?.map(formatRelatedCandidateHuman),
         });
       }
       return asJsonText({
         query: args.query,
         namespace: args.namespace,
         version: args.version,
-        count: records.length,
-        results: records.map(formatMappingRecord),
+        count: search.results.length,
+        results: search.results.map(formatMappingRecord),
+        queryAnalysis: search.queryAnalysis,
+        relatedCandidates: search.relatedCandidates?.map(formatRelatedCandidate),
       });
     } catch (error) {
       return asError(error, { namespace: args.namespace, version: args.version });

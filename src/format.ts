@@ -1,4 +1,4 @@
-import type { SearchResult, ToolErrorPayload } from "./types.js";
+import type { RelatedCandidate, SearchResult, ToolErrorPayload } from "./types.js";
 
 export function asJsonText(value: unknown): { content: Array<{ type: "text"; text: string }> } {
   return {
@@ -31,6 +31,14 @@ export function formatMappingRecord(record: SearchResult): unknown {
   };
 }
 
+export function formatRelatedCandidate(candidate: RelatedCandidate): unknown {
+  return {
+    confidence: candidate.confidence,
+    reasons: candidate.reasons,
+    mapping: formatMappingRecord(candidate.mapping),
+  };
+}
+
 export function formatMappingRecordHuman(record: SearchResult): string {
   const names = Object.entries(record.names)
     .filter(([, value]) => Boolean(value))
@@ -45,6 +53,14 @@ export function formatMappingRecordHuman(record: SearchResult): string {
     record.matchReasons.length > 0 ? `reasons=${record.matchReasons.join(",")}` : undefined,
   ].filter(Boolean);
   return parts.join(" | ");
+}
+
+export function formatRelatedCandidateHuman(candidate: RelatedCandidate): string {
+  return [
+    `candidate confidence=${candidate.confidence}`,
+    `reasons=${candidate.reasons.join(",")}`,
+    formatMappingRecordHuman(candidate.mapping),
+  ].join(" | ");
 }
 
 export function asError(

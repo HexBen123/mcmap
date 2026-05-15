@@ -151,6 +151,47 @@ try {
   );
   pass("search_mapping readable descriptor");
 
+  const strictMixed = await callJsonTool("search_mapping", {
+    query: "MinecraftServer getPlayerManager",
+    namespace: "yarn",
+    version: "1.21.1",
+    limit: 5,
+    allow_classes: true,
+    allow_methods: true,
+    allow_fields: true,
+    translate_mode: "none",
+  });
+  assert(strictMixed.count === 0, "strict mixed query should keep default empty result behavior");
+  assert(!("relatedCandidates" in strictMixed), "strict mixed query should not include assisted candidates by default");
+  pass("search_mapping strict mixed query compatibility");
+
+  const assistedYarn = await callJsonTool("search_mapping", {
+    query: "MinecraftServer getPlayerManager",
+    namespace: "yarn",
+    version: "1.21.1",
+    limit: 5,
+    allow_classes: true,
+    allow_methods: true,
+    allow_fields: true,
+    translate_mode: "none",
+    assist: true,
+  });
+  assert(assistedYarn.count === 0, "assisted mixed query should not move candidates into primary results");
+  assert(
+    assistedYarn.queryAnalysis?.ownerLikeTokens?.includes("MinecraftServer"),
+    "assisted query should expose owner-like token analysis",
+  );
+  assertAssistedCandidate(
+    assistedYarn,
+    (candidate) =>
+      candidate.confidence === "high" &&
+      candidate.reasons?.includes("split_owner_member") &&
+      candidate.mapping?.owner === "net/minecraft/server/MinecraftServer" &&
+      candidate.mapping?.names?.yarn === "getPlayerManager",
+    "assisted Yarn query should expose MinecraftServer.getPlayerManager as related candidate",
+  );
+  pass("search_mapping assisted yarn mixed query");
+
   const humanSearch = await callJsonTool("search_mapping", {
     query: "ClientPlayNetworkHandler",
     namespace: "yarn",
@@ -195,6 +236,62 @@ try {
     "mcp result should include merged SRG name func_130014_f_",
   );
   pass("search_mapping mcp 1.12.2");
+
+  const assistedMcpMatrix = [
+    {
+      label: "1.7.10",
+      query: "EntityPlayerSP updateEntityActionState",
+      expectedOwner: "net/minecraft/client/entity/EntityPlayerSP",
+      expectedName: "updateEntityActionState",
+    },
+    {
+      label: "1.8.9",
+      query: "EntityPlayerSP getClientBrand",
+      expectedOwner: "net/minecraft/client/entity/EntityPlayerSP",
+      expectedName: "getClientBrand",
+    },
+    {
+      label: "1.12.2",
+      query: "EntityPlayerSP getHorseJumpPower",
+      expectedOwner: "net/minecraft/client/entity/EntityPlayerSP",
+      expectedName: "getHorseJumpPower",
+    },
+    {
+      label: "1.16.5",
+      query: "ClientPlayerEntity func_110319_bJ",
+      expectedOwner: "net/minecraft/client/entity/player/ClientPlayerEntity",
+      expectedName: "func_110319_bJ",
+    },
+  ];
+
+  for (const item of assistedMcpMatrix) {
+    const assisted = await callJsonTool("search_mapping", {
+      query: item.query,
+      namespace: "mcp",
+      version: item.label,
+      limit: 5,
+      allow_classes: true,
+      allow_methods: true,
+      allow_fields: true,
+      translate_mode: "none",
+      assist: true,
+    });
+    assert(assisted.count === 0, `assisted MCP ${item.label} should keep primary results empty for mixed phrase`);
+    assert(
+      assisted.queryAnalysis?.ownerLikeTokens?.length > 0,
+      `assisted MCP ${item.label} should expose owner-like token analysis`,
+    );
+    assertAssistedCandidate(
+      assisted,
+      (candidate) =>
+        candidate.confidence === "high" &&
+        candidate.reasons?.includes("split_owner_member") &&
+        candidate.mapping?.owner === item.expectedOwner &&
+        Object.values(candidate.mapping?.names ?? {}).includes(item.expectedName),
+      `assisted MCP ${item.label} should expose ${item.expectedOwner}.${item.expectedName}`,
+    );
+    pass(`search_mapping assisted mcp ${item.label}`);
+  }
 
   const legacyYarn = await callJsonTool("search_mapping", {
     query: "PlayerEntity",
@@ -316,6 +413,11 @@ function assertSearchResult(result, namespace, query) {
   assert(result.query === query, `${namespace} search should echo query`);
   assert(result.count > 0, `${namespace} search should return at least one result`);
   assert(Array.isArray(result.results), `${namespace} search results should be an array`);
+}
+
+function assertAssistedCandidate(result, predicate, message) {
+  assert(Array.isArray(result.relatedCandidates), `${message}: relatedCandidates should be present`);
+  assert(result.relatedCandidates.some(predicate), message);
 }
 
 function assert(condition, message) {
