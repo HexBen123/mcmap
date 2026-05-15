@@ -206,6 +206,7 @@ When a tool is meant for an AI agent rather than a human, keep the following bou
 - Derived facts stay derived. Readable descriptors, match scores, and match reasons should be additive fields, not replacements for source values.
 - Conservative joins are safer than eager joins. Only merge across namespaces when the source relationship is structurally defensible.
 - Optional recommendations should be clearly labeled as guidance, not as verified dependency coordinates.
+- Copyable dependency coordinates need a stronger contract than suggestions. Emit a coordinate only when an upstream metadata source verified the version, and include machine-readable fields such as `versioned: true` and `confidence: "verified"`; otherwise keep the item unversioned with a reason.
 - Assisted lookup candidates should be separated from authoritative results. If a query helper returns "maybe" matches, put them in an explicitly named field such as `relatedCandidates` with confidence and reason metadata.
 
 ### Checklist for AI-facing lookup tools
@@ -215,4 +216,5 @@ When a tool is meant for an AI agent rather than a human, keep the following bou
 - [ ] Confidence metadata is machine-readable
 - [ ] Cross-namespace joins are conservative and reproducible
 - [ ] Optional suggestions cannot be mistaken for authoritative facts
+- [ ] Copyable dependency coordinates are only emitted after source metadata verification
 - [ ] Assisted or low-confidence candidates are not mixed into primary result arrays
