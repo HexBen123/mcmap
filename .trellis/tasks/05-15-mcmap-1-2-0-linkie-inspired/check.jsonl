@@ -1,0 +1,3 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check AI-facing structured output boundaries"}
+{"file": ".trellis/tasks/05-15-mcmap-1-2-0-linkie-inspired/research/linkie-lessons.md", "reason": "Verify Linkie-inspired behavior stays separated from authoritative results"}
