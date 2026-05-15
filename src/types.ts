@@ -22,6 +22,25 @@ export interface MappingRecord {
   side?: string;
 }
 
+export type MatchReason =
+  | "exact_primary_name"
+  | "exact_alternate_name"
+  | "exact_leaf_name"
+  | "prefix_primary_name"
+  | "prefix_alternate_name"
+  | "token_primary_name"
+  | "token_alternate_name"
+  | "owner_leaf_match"
+  | "descriptor_match"
+  | "path_substring_match";
+
+export interface SearchResult extends MappingRecord {
+  score: number;
+  matchReasons: MatchReason[];
+  matchedNames: string[];
+  readableDescriptor?: string;
+}
+
 export interface SearchOptions {
   query: string;
   namespace: string;
@@ -31,6 +50,7 @@ export interface SearchOptions {
   allowMethods: boolean;
   allowFields: boolean;
   translateMode: "none" | "ab" | "ba";
+  format: "json" | "human";
 }
 
 export interface VersionList {
@@ -45,4 +65,31 @@ export interface LoaderVersionResult {
   loader: string;
   versions: unknown[];
   source: string;
+}
+
+export interface EcosystemRecommendationResult {
+  loader: "fabric" | "forge" | "neoforge" | "legacy-fabric";
+  minecraft: string;
+  recommendations: Array<{
+    id: string;
+    artifact: string;
+    kind: "api" | "utility" | "ui";
+    source: string;
+    versioned: false;
+  }>;
+}
+
+export interface ToolErrorPayload {
+  error: {
+    code:
+      | "UNSUPPORTED_NAMESPACE"
+      | "UNSUPPORTED_VERSION"
+      | "MAPPINGS_NOT_FOUND"
+      | "INVALID_REQUEST"
+      | "INTERNAL_ERROR";
+    message: string;
+    namespace?: string;
+    version?: string;
+    suggestions?: string[];
+  };
 }

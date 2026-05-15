@@ -109,6 +109,21 @@ npm run smoke
 
 搜索类、方法、字段和参数名称。结果会尽量包含 owner class、descriptor、obfuscated、official、mojmap、intermediary、yarn、srg、mcp 等可获得的名称。
 
+默认返回 JSON，适合 AI 编程代理继续推理。结果还会包含：
+
+- `score`
+- `matchReasons`
+- `matchedNames`
+- 可推导时的 `readableDescriptor`
+
+`translate_mode` 现在会真实影响搜索方向：
+
+- `none`：搜索当前记录里的全部可用名称。
+- `ab`：只按当前命名空间的主名称搜索。
+- `ba`：只按替代名称反查回当前命名空间。
+
+如果需要人类快速查看，可显式请求 `format: "human"`；默认仍保持 JSON。
+
 Yarn 查询示例：
 
 ```json
@@ -133,6 +148,20 @@ Legacy MCP/SRG 查询示例：
 }
 ```
 
+反向查询示例：
+
+```json
+{
+  "query": "method_45729",
+  "namespace": "yarn",
+  "version": "1.21.1",
+  "allow_classes": false,
+  "allow_methods": true,
+  "allow_fields": false,
+  "translate_mode": "ba"
+}
+```
+
 ### `get_loader_versions`
 
 查询 Mod Loader 依赖坐标。当前支持：
@@ -144,6 +173,12 @@ Legacy MCP/SRG 查询示例：
 
 返回结果会按 Minecraft 版本分组，并尽量给出可直接放进 Gradle 的依赖坐标。
 
+### `get_ecosystem_recommendations`
+
+返回某个加载器下常见的**可选**生态建议目录，例如配置库或菜单库。这个工具与 `get_loader_versions` 分开，是为了避免把“核心 loader 事实”和“常见但非必需的生态选择”混在一起。
+
+这些结果默认只说明可选生态方向和 artifact 名，不假装返回已经核验过的可复制版本坐标；需要版本时，仍应先查对应上游元数据。
+
 ## 数据源
 
 | 类型 | 数据源 |
@@ -151,6 +186,8 @@ Legacy MCP/SRG 查询示例：
 | Mojmap | Mojang version manifest 和官方 client/server mapping 下载 |
 | Yarn | Fabric Maven `net.fabricmc:yarn` Tiny v2 artifacts |
 | Intermediary | Fabric Maven `net.fabricmc:intermediary` Tiny v2 artifacts |
+| Legacy Yarn | Legacy Fabric Maven `net.legacyfabric:yarn` Tiny v2 artifacts |
+| Quilt Mappings | Quilt Maven `org.quiltmc:quilt-mappings` intermediary Tiny v2 artifacts |
 | MCP/SRG | Forge Maven MCPConfig、MCP stable/snapshot CSV、历史 MCP SRG/CSRG artifacts |
 | Parchment | ParchmentMC Maven metadata |
 | Fabric Loader | Fabric Meta v2 和 Fabric Maven metadata |
@@ -198,5 +235,5 @@ npm pack --dry-run
 ## 当前限制
 
 - `parchment` 当前主要暴露版本 metadata，完整参数名和 Javadoc 搜索仍是增量支持范围。
-- `search_mapping` 一次只加载一个命名空间。只有源数据天然包含多套名称时才会做跨命名空间合并，例如 Yarn Tiny v2、MCP/SRG 和 MCP CSV。
+- `search_mapping` 仍以单一主命名空间为入口，但会在可安全对齐时做有限增强，例如 Yarn / Intermediary 之间的补充命名，以及 MCP/SRG 与 MCP CSV 的合并。
 - Loader metadata 依赖上游 Maven 和 meta API。如果上游版本格式变化，应调整解析器，而不是伪造结果。

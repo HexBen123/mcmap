@@ -2,13 +2,15 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { asError, asJsonText, formatMappingRecord } from "./format.js";
+import { asError, asJsonText, formatMappingRecord, formatMappingRecordHuman } from "./format.js";
 import { searchMappings } from "./search.js";
 import { getIntermediaryVersionList, getYarnVersionList } from "./sources/fabric.js";
-import { getLoaderVersions } from "./sources/loaders.js";
+import { getLegacyYarnVersionList } from "./sources/legacyFabric.js";
+import { getEcosystemRecommendations, getLoaderVersions } from "./sources/loaders.js";
 import { getMcpVersionList } from "./sources/mcp.js";
 import { getMojangVersionList } from "./sources/mojang.js";
 import { getParchmentVersionList } from "./sources/parchment.js";
+import { getQuiltMappingsVersionList } from "./sources/quilt.js";
 import { getCacheRoot } from "./utils/cache.js";
 
 const server = new McpServer({
@@ -45,6 +47,18 @@ server.registerTool(
           supports: ["class", "method", "field", "param"],
         },
         {
+          id: "legacy-yarn",
+          aliases: [],
+          description: "Legacy Fabric Yarn named mappings from Legacy Fabric Maven.",
+          supports: ["class", "method", "field", "param"],
+        },
+        {
+          id: "quilt-mappings",
+          aliases: [],
+          description: "Quilt Mappings named mappings from Quilt Maven.",
+          supports: ["class", "method", "field", "param"],
+        },
+        {
           id: "mcp",
           aliases: ["srg"],
           description: "Legacy Forge MCP/SRG mappings from Forge Maven MCPConfig, MCP CSV, and historical SRG/CSRG artifacts.",
@@ -66,7 +80,9 @@ server.registerTool(
   {
     description: "查询指定命名空间支持的 Minecraft 版本，区分稳定版与快照版。",
     inputSchema: z.object({
-      namespace: z.string().describe("命名空间 ID，如 yarn、mojmap、mcp、intermediary、parchment"),
+      namespace: z
+        .string()
+        .describe("命名空间 ID，如 yarn、legacy-yarn、quilt-mappings、mojmap、mcp、intermediary、parchment"),
     }),
   },
   async ({ namespace }) => {
@@ -80,6 +96,10 @@ server.registerTool(
         case "yarn":
         case "named":
           return asJsonText(await getYarnVersionList());
+        case "legacy-yarn":
+          return asJsonText(await getLegacyYarnVersionList());
+        case "quilt-mappings":
+          return asJsonText(await getQuiltMappingsVersionList());
         case "mcp":
         case "srg":
           return asJsonText(await getMcpVersionList());
@@ -89,7 +109,7 @@ server.registerTool(
           throw new Error(`Unsupported namespace: ${namespace}`);
       }
     } catch (error) {
-      return asError(error);
+      return asError(error, { namespace });
     }
   },
 );
@@ -108,6 +128,7 @@ server.registerTool(
       allow_methods: z.boolean().default(true).describe("是否包含方法结果"),
       allow_fields: z.boolean().default(true).describe("是否包含字段结果"),
       translate_mode: z.enum(["none", "ab", "ba"]).default("none").describe("兼容字段，当前搜索模式下保留"),
+      format: z.enum(["json", "human"]).default("json").describe("输出格式，默认 json"),
     }),
   },
   async (args) => {
@@ -121,7 +142,17 @@ server.registerTool(
         allowMethods: args.allow_methods,
         allowFields: args.allow_fields,
         translateMode: args.translate_mode,
+        format: args.format,
       });
+      if (args.format === "human") {
+        return asJsonText({
+          query: args.query,
+          namespace: args.namespace,
+          version: args.version,
+          count: records.length,
+          results: records.map(formatMappingRecordHuman),
+        });
+      }
       return asJsonText({
         query: args.query,
         namespace: args.namespace,
@@ -130,8 +161,23 @@ server.registerTool(
         results: records.map(formatMappingRecord),
       });
     } catch (error) {
-      return asError(error);
+      return asError(error, { namespace: args.namespace, version: args.version });
     }
+  },
+);
+
+server.registerTool(
+  "get_ecosystem_recommendations",
+  {
+    description:
+      "按加载器和 Minecraft 版本返回可选生态依赖建议。该工具只给可选建议，不替代 get_loader_versions 的核心依赖事实。",
+    inputSchema: z.object({
+      loader: z.enum(["fabric", "forge", "neoforge", "legacy-fabric"]).default("fabric"),
+      minecraft: z.string().describe("目标 Minecraft 版本，如 1.21.1"),
+    }),
+  },
+  async ({ loader, minecraft }) => {
+    return asJsonText(getEcosystemRecommendations(loader, minecraft));
   },
 );
 

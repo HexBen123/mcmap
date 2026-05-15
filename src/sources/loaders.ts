@@ -1,4 +1,4 @@
-import type { LoaderVersionResult } from "../types.js";
+import type { EcosystemRecommendationResult, LoaderVersionResult } from "../types.js";
 import { fetchTextCached } from "../utils/cache.js";
 import { fetchMavenVersions, latestYarnForMinecraft } from "../utils/maven.js";
 import { compareLooseVersions, stableMinecraftVersion } from "../utils/versions.js";
@@ -63,6 +63,70 @@ export async function getLoaderVersions(
     return getNeoForgeVersions(stableOnly, limit);
   }
   return getLegacyFabricLoaderVersions(stableOnly, limit);
+}
+
+export function getEcosystemRecommendations(
+  loader: "fabric" | "forge" | "neoforge" | "legacy-fabric",
+  minecraft: string,
+): EcosystemRecommendationResult {
+  const recommendations: EcosystemRecommendationResult["recommendations"] = [];
+
+  if (loader === "fabric") {
+    recommendations.push(
+      {
+        id: "architectury-api",
+        artifact: "dev.architectury:architectury-fabric",
+        kind: "api",
+        source: "https://maven.architectury.dev/",
+        versioned: false,
+      },
+      {
+        id: "cloth-config",
+        artifact: "me.shedaniel.cloth:cloth-config-fabric",
+        kind: "ui",
+        source: "https://maven.shedaniel.me/",
+        versioned: false,
+      },
+      {
+        id: "modmenu",
+        artifact: "com.terraformersmc:modmenu",
+        kind: "ui",
+        source: "https://maven.terraformersmc.com/releases/",
+        versioned: false,
+      },
+    );
+  } else if (loader === "forge") {
+    recommendations.push({
+      id: "cloth-config",
+      artifact: "me.shedaniel.cloth:cloth-config-forge",
+      kind: "ui",
+      source: "https://maven.shedaniel.me/",
+      versioned: false,
+    });
+  } else if (loader === "neoforge") {
+    recommendations.push(
+      {
+        id: "architectury-api",
+        artifact: "dev.architectury:architectury-neoforge",
+        kind: "api",
+        source: "https://maven.architectury.dev/",
+        versioned: false,
+      },
+      {
+        id: "cloth-config",
+        artifact: "me.shedaniel.cloth:cloth-config-neoforge",
+        kind: "ui",
+        source: "https://maven.shedaniel.me/",
+        versioned: false,
+      },
+    );
+  }
+
+  return {
+    loader,
+    minecraft,
+    recommendations,
+  };
 }
 
 async function getFabricLoaderVersions(stableOnly: boolean, limit: number): Promise<LoaderVersionResult> {
