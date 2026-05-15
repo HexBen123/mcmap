@@ -340,7 +340,28 @@ try {
     recommendations.recommendations.some((item) => item.id === "modmenu"),
     "fabric recommendations should include optional modmenu guidance",
   );
+  assertVersionedRecommendation(
+    recommendations,
+    (item) => item.id === "modmenu" && item.coordinate?.startsWith("com.terraformersmc:modmenu:"),
+    "fabric recommendations should include a verified Mod Menu coordinate",
+  );
+  assertVersionedRecommendation(
+    recommendations,
+    (item) => item.id === "architectury-api" && item.coordinate?.startsWith("dev.architectury:architectury-fabric:"),
+    "fabric recommendations should include a verified Architectury Fabric coordinate",
+  );
   pass("get_ecosystem_recommendations fabric");
+
+  const forgeRecommendations = await callJsonTool("get_ecosystem_recommendations", {
+    loader: "forge",
+    minecraft: "1.12.2",
+  });
+  assertVersionedRecommendation(
+    forgeRecommendations,
+    (item) => item.id === "jei" && item.coordinate?.startsWith("mezz.jei:jei_1.12.2:"),
+    "forge 1.12.2 recommendations should include a verified JEI coordinate",
+  );
+  pass("get_ecosystem_recommendations forge 1.12.2");
 
   const unsupported = await callTool("search_mapping", {
     query: "EntityPlayer",
@@ -418,6 +439,21 @@ function assertSearchResult(result, namespace, query) {
 function assertAssistedCandidate(result, predicate, message) {
   assert(Array.isArray(result.relatedCandidates), `${message}: relatedCandidates should be present`);
   assert(result.relatedCandidates.some(predicate), message);
+}
+
+function assertVersionedRecommendation(result, predicate, message) {
+  assert(Array.isArray(result.recommendations), `${message}: recommendations should be present`);
+  assert(
+    result.recommendations.some(
+      (item) =>
+        item.versioned === true &&
+        item.confidence === "verified" &&
+        typeof item.version === "string" &&
+        typeof item.coordinate === "string" &&
+        predicate(item),
+    ),
+    message,
+  );
 }
 
 function assert(condition, message) {

@@ -1,4 +1,9 @@
-import type { EcosystemRecommendationResult, LoaderVersionResult } from "../types.js";
+import type {
+  EcosystemRecommendation,
+  EcosystemRecommendationKind,
+  EcosystemRecommendationResult,
+  LoaderVersionResult,
+} from "../types.js";
 import { fetchTextCached } from "../utils/cache.js";
 import { fetchMavenVersions, latestYarnForMinecraft } from "../utils/maven.js";
 import { compareLooseVersions, stableMinecraftVersion } from "../utils/versions.js";
@@ -12,6 +17,11 @@ import {
 
 const FABRIC_META = "https://meta.fabricmc.net/v2";
 const LEGACY_FABRIC_META = "https://meta.legacyfabric.net/v2";
+const ARCHITECTURY_MAVEN = "https://maven.architectury.dev";
+const SHEDANIEL_MAVEN = "https://maven.shedaniel.me";
+const TERRAFORMERS_MAVEN = "https://maven.terraformersmc.com/releases";
+const BLAZE_MAVEN = "https://maven.blamejared.com";
+const MODRINTH_API = "https://api.modrinth.com/v2";
 const LEGACY_FABRIC_API_METADATA =
   "https://maven.legacyfabric.net/net/legacyfabric/legacy-fabric-api/legacy-fabric-api/maven-metadata.xml";
 const LEGACY_YARN_METADATA = "https://maven.legacyfabric.net/net/legacyfabric/yarn/maven-metadata.xml";
@@ -48,6 +58,122 @@ interface ParsedMavenLoaderVersion {
   version: string;
 }
 
+interface ModrinthVersion {
+  version_number: string;
+  date_published: string;
+  game_versions: string[];
+  loaders: string[];
+}
+
+interface ModrinthBackedRecommendationDefinition {
+  id: string;
+  name: string;
+  modrinthProject: string;
+  groupId: string;
+  artifactId: string;
+  kind: EcosystemRecommendationKind;
+  mavenBaseUrl: string;
+  source: string;
+  repositories: string[];
+}
+
+const FABRIC_ECOSYSTEM: ModrinthBackedRecommendationDefinition[] = [
+  {
+    id: "architectury-api",
+    name: "Architectury API",
+    modrinthProject: "architectury-api",
+    groupId: "dev.architectury",
+    artifactId: "architectury-fabric",
+    kind: "api",
+    mavenBaseUrl: ARCHITECTURY_MAVEN,
+    source: `${MODRINTH_API}/project/architectury-api/version and ${ARCHITECTURY_MAVEN}`,
+    repositories: [ARCHITECTURY_MAVEN, SHEDANIEL_MAVEN],
+  },
+  {
+    id: "cloth-config",
+    name: "Cloth Config",
+    modrinthProject: "cloth-config",
+    groupId: "me.shedaniel.cloth",
+    artifactId: "cloth-config-fabric",
+    kind: "ui",
+    mavenBaseUrl: SHEDANIEL_MAVEN,
+    source: `${MODRINTH_API}/project/cloth-config/version and ${SHEDANIEL_MAVEN}`,
+    repositories: [SHEDANIEL_MAVEN],
+  },
+  {
+    id: "modmenu",
+    name: "Mod Menu",
+    modrinthProject: "modmenu",
+    groupId: "com.terraformersmc",
+    artifactId: "modmenu",
+    kind: "ui",
+    mavenBaseUrl: TERRAFORMERS_MAVEN,
+    source: `${MODRINTH_API}/project/modmenu/version and ${TERRAFORMERS_MAVEN}`,
+    repositories: [TERRAFORMERS_MAVEN],
+  },
+  {
+    id: "rei",
+    name: "Roughly Enough Items",
+    modrinthProject: "rei",
+    groupId: "me.shedaniel",
+    artifactId: "RoughlyEnoughItems-fabric",
+    kind: "utility",
+    mavenBaseUrl: SHEDANIEL_MAVEN,
+    source: `${MODRINTH_API}/project/rei/version and ${SHEDANIEL_MAVEN}`,
+    repositories: [SHEDANIEL_MAVEN],
+  },
+];
+
+const FORGE_ECOSYSTEM: ModrinthBackedRecommendationDefinition[] = [
+  {
+    id: "cloth-config",
+    name: "Cloth Config",
+    modrinthProject: "cloth-config",
+    groupId: "me.shedaniel.cloth",
+    artifactId: "cloth-config-forge",
+    kind: "ui",
+    mavenBaseUrl: SHEDANIEL_MAVEN,
+    source: `${MODRINTH_API}/project/cloth-config/version and ${SHEDANIEL_MAVEN}`,
+    repositories: [SHEDANIEL_MAVEN],
+  },
+];
+
+const NEOFORGE_ECOSYSTEM: ModrinthBackedRecommendationDefinition[] = [
+  {
+    id: "architectury-api",
+    name: "Architectury API",
+    modrinthProject: "architectury-api",
+    groupId: "dev.architectury",
+    artifactId: "architectury-neoforge",
+    kind: "api",
+    mavenBaseUrl: ARCHITECTURY_MAVEN,
+    source: `${MODRINTH_API}/project/architectury-api/version and ${ARCHITECTURY_MAVEN}`,
+    repositories: [ARCHITECTURY_MAVEN, SHEDANIEL_MAVEN],
+  },
+  {
+    id: "cloth-config",
+    name: "Cloth Config",
+    modrinthProject: "cloth-config",
+    groupId: "me.shedaniel.cloth",
+    artifactId: "cloth-config-neoforge",
+    kind: "ui",
+    mavenBaseUrl: SHEDANIEL_MAVEN,
+    source: `${MODRINTH_API}/project/cloth-config/version and ${SHEDANIEL_MAVEN}`,
+    repositories: [SHEDANIEL_MAVEN],
+  },
+  {
+    id: "rei",
+    name: "Roughly Enough Items",
+    modrinthProject: "rei",
+    groupId: "me.shedaniel",
+    artifactId: "RoughlyEnoughItems-neoforge",
+    kind: "utility",
+    mavenBaseUrl: SHEDANIEL_MAVEN,
+    source: `${MODRINTH_API}/project/rei/version and ${SHEDANIEL_MAVEN}`,
+    repositories: [SHEDANIEL_MAVEN],
+  },
+];
+
 export async function getLoaderVersions(
   loader: "fabric" | "forge" | "neoforge" | "legacy-fabric",
   stableOnly: boolean,
@@ -65,68 +191,141 @@ export async function getLoaderVersions(
   return getLegacyFabricLoaderVersions(stableOnly, limit);
 }
 
-export function getEcosystemRecommendations(
+export async function getEcosystemRecommendations(
   loader: "fabric" | "forge" | "neoforge" | "legacy-fabric",
   minecraft: string,
-): EcosystemRecommendationResult {
-  const recommendations: EcosystemRecommendationResult["recommendations"] = [];
-
-  if (loader === "fabric") {
-    recommendations.push(
-      {
-        id: "architectury-api",
-        artifact: "dev.architectury:architectury-fabric",
-        kind: "api",
-        source: "https://maven.architectury.dev/",
-        versioned: false,
-      },
-      {
-        id: "cloth-config",
-        artifact: "me.shedaniel.cloth:cloth-config-fabric",
-        kind: "ui",
-        source: "https://maven.shedaniel.me/",
-        versioned: false,
-      },
-      {
-        id: "modmenu",
-        artifact: "com.terraformersmc:modmenu",
-        kind: "ui",
-        source: "https://maven.terraformersmc.com/releases/",
-        versioned: false,
-      },
-    );
-  } else if (loader === "forge") {
-    recommendations.push({
-      id: "cloth-config",
-      artifact: "me.shedaniel.cloth:cloth-config-forge",
-      kind: "ui",
-      source: "https://maven.shedaniel.me/",
-      versioned: false,
-    });
-  } else if (loader === "neoforge") {
-    recommendations.push(
-      {
-        id: "architectury-api",
-        artifact: "dev.architectury:architectury-neoforge",
-        kind: "api",
-        source: "https://maven.architectury.dev/",
-        versioned: false,
-      },
-      {
-        id: "cloth-config",
-        artifact: "me.shedaniel.cloth:cloth-config-neoforge",
-        kind: "ui",
-        source: "https://maven.shedaniel.me/",
-        versioned: false,
-      },
-    );
-  }
-
+): Promise<EcosystemRecommendationResult> {
+  const recommendations = await buildEcosystemRecommendations(loader, minecraft);
   return {
     loader,
     minecraft,
     recommendations,
   };
+}
+
+async function buildEcosystemRecommendations(
+  loader: "fabric" | "forge" | "neoforge" | "legacy-fabric",
+  minecraft: string,
+): Promise<EcosystemRecommendation[]> {
+  if (loader === "fabric") {
+    return resolveModrinthBackedRecommendations(FABRIC_ECOSYSTEM, minecraft, "fabric");
+  }
+  if (loader === "forge") {
+    const recommendations = await resolveModrinthBackedRecommendations(
+      FORGE_ECOSYSTEM,
+      minecraft,
+      "forge",
+    );
+    const jei = await resolveJeiRecommendation(minecraft, "forge");
+    return jei ? [...recommendations, jei] : recommendations;
+  }
+  if (loader === "neoforge") {
+    const recommendations = await resolveModrinthBackedRecommendations(
+      NEOFORGE_ECOSYSTEM,
+      minecraft,
+      "neoforge",
+    );
+    const jei = await resolveJeiRecommendation(minecraft, "neoforge");
+    return jei ? [...recommendations, jei] : recommendations;
+  }
+  return [
+    makeUnversionedRecommendation({
+      id: "legacy-fabric-api",
+      name: "Legacy Fabric API",
+      groupId: "net.legacyfabric.legacy-fabric-api",
+      artifactId: "legacy-fabric-api",
+      kind: "api",
+      source: LEGACY_FABRIC_API_METADATA,
+      repositories: ["https://maven.legacyfabric.net"],
+      reason: "Legacy Fabric API versions are exposed by get_loader_versions; no extra optional ecosystem coordinate is inferred.",
+    }),
+  ];
+}
+
+async function resolveModrinthBackedRecommendations(
+  definitions: ModrinthBackedRecommendationDefinition[],
+  minecraft: string,
+  loader: "fabric" | "forge" | "neoforge",
+): Promise<EcosystemRecommendation[]> {
+  return Promise.all(
+    definitions.map(async (definition) => {
+      try {
+        const modrinthVersion = await latestModrinthVersion(
+          definition.modrinthProject,
+          minecraft,
+          loader,
+        );
+        if (!modrinthVersion) {
+          return makeUnversionedRecommendation({
+            ...definition,
+            reason: `No Modrinth version matched Minecraft ${minecraft} with loader ${loader}.`,
+          });
+        }
+
+        const candidateVersions = modrinthVersionCandidates(modrinthVersion.version_number);
+        const mavenVersions = await fetchMavenVersions(metadataUrl(
+          definition.mavenBaseUrl,
+          definition.groupId,
+          definition.artifactId,
+        ));
+        const verifiedVersion = candidateVersions.find((candidate) => mavenVersions.includes(candidate));
+        if (!verifiedVersion) {
+          return makeUnversionedRecommendation({
+            ...definition,
+            reason: `Modrinth returned ${modrinthVersion.version_number}, but that version was not found in Maven metadata.`,
+          });
+        }
+
+        return makeVersionedRecommendation({
+          ...definition,
+          version: verifiedVersion,
+          versionSource: `${MODRINTH_API}/project/${definition.modrinthProject}/version`,
+        });
+      } catch (error) {
+        return makeUnversionedRecommendation({
+          ...definition,
+          reason: `Version lookup failed: ${errorMessage(error)}`,
+        });
+      }
+    }),
+  );
+}
+
+async function resolveJeiRecommendation(
+  minecraft: string,
+  loader: "forge" | "neoforge",
+): Promise<EcosystemRecommendation | undefined> {
+  const artifactId = jeiArtifactId(minecraft, loader);
+  const definition = {
+    id: "jei",
+    name: "Just Enough Items",
+    groupId: "mezz.jei",
+    artifactId,
+    kind: "utility" as const,
+    source: `${BLAZE_MAVEN}/mezz/jei/${artifactId}/maven-metadata.xml`,
+    repositories: [BLAZE_MAVEN, "https://modmaven.dev", "https://dvs1.progwml6.com/files/maven"],
+  };
+
+  try {
+    const versions = await fetchMavenVersions(metadataUrl(BLAZE_MAVEN, definition.groupId, artifactId));
+    const version = versions.sort(compareLooseVersions).at(-1);
+    if (!version) {
+      return makeUnversionedRecommendation({
+        ...definition,
+        reason: `No JEI Maven versions were found for Minecraft ${minecraft} and loader ${loader}.`,
+      });
+    }
+    return makeVersionedRecommendation({
+      ...definition,
+      version,
+      versionSource: definition.source,
+    });
+  } catch (error) {
+    return makeUnversionedRecommendation({
+      ...definition,
+      reason: `JEI metadata lookup failed: ${errorMessage(error)}`,
+    });
+  }
 }
 
 async function getFabricLoaderVersions(stableOnly: boolean, limit: number): Promise<LoaderVersionResult> {
@@ -302,6 +501,94 @@ function latestPlusVersionCoordinate(
     .sort(compareLooseVersions)
     .at(-1);
   return version ? `${coordinatePrefix}:${version}` : undefined;
+}
+
+function makeVersionedRecommendation(input: {
+  id: string;
+  name: string;
+  groupId: string;
+  artifactId: string;
+  kind: EcosystemRecommendationKind;
+  source: string;
+  repositories: string[];
+  version: string;
+  versionSource: string;
+}): EcosystemRecommendation {
+  return {
+    id: input.id,
+    name: input.name,
+    artifact: `${input.groupId}:${input.artifactId}`,
+    kind: input.kind,
+    source: input.source,
+    repositories: input.repositories,
+    versioned: true,
+    confidence: "verified",
+    version: input.version,
+    coordinate: `${input.groupId}:${input.artifactId}:${input.version}`,
+    versionSource: input.versionSource,
+  };
+}
+
+function makeUnversionedRecommendation(input: {
+  id: string;
+  name: string;
+  groupId: string;
+  artifactId: string;
+  kind: EcosystemRecommendationKind;
+  source: string;
+  repositories: string[];
+  reason: string;
+}): EcosystemRecommendation {
+  return {
+    id: input.id,
+    name: input.name,
+    artifact: `${input.groupId}:${input.artifactId}`,
+    kind: input.kind,
+    source: input.source,
+    repositories: input.repositories,
+    versioned: false,
+    confidence: "unversioned",
+    reason: input.reason,
+  };
+}
+
+async function latestModrinthVersion(
+  project: string,
+  minecraft: string,
+  loader: "fabric" | "forge" | "neoforge",
+): Promise<ModrinthVersion | undefined> {
+  const url =
+    `${MODRINTH_API}/project/${encodeURIComponent(project)}/version` +
+    `?game_versions=${encodeURIComponent(JSON.stringify([minecraft]))}` +
+    `&loaders=${encodeURIComponent(JSON.stringify([loader]))}`;
+  const versions = JSON.parse(
+    await fetchTextCached(url, { ttlMs: 60 * 60 * 1000 }),
+  ) as ModrinthVersion[];
+  return versions
+    .filter((version) => version.game_versions.includes(minecraft))
+    .filter((version) => version.loaders.includes(loader))
+    .sort((a, b) => a.date_published.localeCompare(b.date_published))
+    .at(-1);
+}
+
+function modrinthVersionCandidates(version: string): string[] {
+  const withoutLoaderSuffix = version.replace(/\+(fabric|forge|neoforge|quilt)$/i, "");
+  return [...new Set([version, withoutLoaderSuffix])];
+}
+
+function metadataUrl(baseUrl: string, groupId: string, artifactId: string): string {
+  return `${baseUrl.replace(/\/$/, "")}/${groupId.replaceAll(".", "/")}/${artifactId}/maven-metadata.xml`;
+}
+
+function jeiArtifactId(minecraft: string, loader: "forge" | "neoforge"): string {
+  if (compareLooseVersions(minecraft, "1.13") < 0) {
+    return `jei_${minecraft}`;
+  }
+  return `jei-${minecraft}-${loader}-api`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 async function fetchMojangReleaseVersions(): Promise<string[]> {

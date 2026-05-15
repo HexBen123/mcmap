@@ -206,9 +206,53 @@ Legacy MCP/SRG 查询示例：
 
 ### `get_ecosystem_recommendations`
 
-返回某个加载器下常见的**可选**生态建议目录，例如配置库或菜单库。这个工具与 `get_loader_versions` 分开，是为了避免把“核心 loader 事实”和“常见但非必需的生态选择”混在一起。
+返回某个加载器下常见的**可选**生态建议目录，例如配置库、菜单库或物品查看库。这个工具与 `get_loader_versions` 分开，是为了避免把“核心 loader 事实”和“常见但非必需的生态选择”混在一起。
 
-这些结果默认只说明可选生态方向和 artifact 名，不假装返回已经核验过的可复制版本坐标；需要版本时，仍应先查对应上游元数据。
+当工具能从上游 metadata 核验版本时，会返回可直接放进 Gradle 的 `coordinate`：
+
+```json
+{
+  "loader": "fabric",
+  "minecraft": "1.21.1",
+  "recommendations": [
+    {
+      "id": "modmenu",
+      "name": "Mod Menu",
+      "artifact": "com.terraformersmc:modmenu",
+      "kind": "ui",
+      "source": "https://api.modrinth.com/v2/project/modmenu/version and https://maven.terraformersmc.com/releases",
+      "repositories": ["https://maven.terraformersmc.com/releases"],
+      "versioned": true,
+      "confidence": "verified",
+      "version": "11.0.4",
+      "coordinate": "com.terraformersmc:modmenu:11.0.4",
+      "versionSource": "https://api.modrinth.com/v2/project/modmenu/version"
+    }
+  ]
+}
+```
+
+AI 或脚本只有在 `versioned: true` 且 `confidence: "verified"` 时，才应把 `coordinate` 当成可复制依赖。若上游没有对应版本或临时不可用，结果会保持 `versioned: false`，并给出 `reason`，例如：
+
+```json
+{
+  "id": "cloth-config",
+  "name": "Cloth Config",
+  "artifact": "me.shedaniel.cloth:cloth-config-forge",
+  "kind": "ui",
+  "repositories": ["https://maven.shedaniel.me"],
+  "versioned": false,
+  "confidence": "unversioned",
+  "reason": "No Modrinth version matched Minecraft 1.12.2 with loader forge."
+}
+```
+
+当前会尽量解析：
+
+- Fabric：Architectury API、Cloth Config、Mod Menu、Roughly Enough Items。
+- Forge：Cloth Config、Just Enough Items。
+- NeoForge：Architectury API、Cloth Config、Roughly Enough Items、Just Enough Items。
+- Legacy Fabric：保持保守建议，核心 Legacy Fabric API 版本仍以 `get_loader_versions` 为准。
 
 ## 数据源
 

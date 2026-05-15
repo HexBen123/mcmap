@@ -193,7 +193,7 @@ server.registerTool(
     }),
   },
   async ({ loader, minecraft }) => {
-    return asJsonText(getEcosystemRecommendations(loader, minecraft));
+    return asJsonText(await getEcosystemRecommendations(loader, minecraft));
   },
 );
 

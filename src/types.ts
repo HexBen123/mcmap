@@ -98,16 +98,40 @@ export interface LoaderVersionResult {
   source: string;
 }
 
+export type EcosystemRecommendationKind = "api" | "utility" | "ui";
+export type EcosystemRecommendationConfidence = "verified" | "unversioned";
+
+export interface EcosystemRecommendationBase {
+  id: string;
+  name: string;
+  artifact: string;
+  kind: EcosystemRecommendationKind;
+  source: string;
+  repositories: string[];
+}
+
+export interface VersionedEcosystemRecommendation extends EcosystemRecommendationBase {
+  versioned: true;
+  confidence: "verified";
+  version: string;
+  coordinate: string;
+  versionSource: string;
+}
+
+export interface UnversionedEcosystemRecommendation extends EcosystemRecommendationBase {
+  versioned: false;
+  confidence: "unversioned";
+  reason: string;
+}
+
+export type EcosystemRecommendation =
+  | VersionedEcosystemRecommendation
+  | UnversionedEcosystemRecommendation;
+
 export interface EcosystemRecommendationResult {
   loader: "fabric" | "forge" | "neoforge" | "legacy-fabric";
   minecraft: string;
-  recommendations: Array<{
-    id: string;
-    artifact: string;
-    kind: "api" | "utility" | "ui";
-    source: string;
-    versioned: false;
-  }>;
+  recommendations: EcosystemRecommendation[];
 }
 
 export interface ToolErrorPayload {
