@@ -195,3 +195,22 @@ Create detailed flow docs when:
 - Multiple teams are involved
 - Data format is complex
 - Feature has caused bugs before
+
+---
+
+## AI-Facing Structured Tool Boundary
+
+When a tool is meant for an AI agent rather than a human, keep the following boundary explicit:
+
+- Raw facts stay raw. Do not overwrite source identifiers just to make output look nicer.
+- Derived facts stay derived. Readable descriptors, match scores, and match reasons should be additive fields, not replacements for source values.
+- Conservative joins are safer than eager joins. Only merge across namespaces when the source relationship is structurally defensible.
+- Optional recommendations should be clearly labeled as guidance, not as verified dependency coordinates.
+
+### Checklist for AI-facing lookup tools
+
+- [ ] Raw source values are still present in the response
+- [ ] Derived fields are clearly marked as derived
+- [ ] Confidence metadata is machine-readable
+- [ ] Cross-namespace joins are conservative and reproducible
+- [ ] Optional suggestions cannot be mistaken for authoritative facts
