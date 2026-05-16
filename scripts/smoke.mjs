@@ -245,10 +245,28 @@ try {
       expectedName: "updateEntityActionState",
     },
     {
+      label: "1.8",
+      query: "EntityPlayerSP updateEntityActionState",
+      expectedOwner: "net/minecraft/client/entity/EntityPlayerSP",
+      expectedName: "updateEntityActionState",
+    },
+    {
       label: "1.8.9",
       query: "EntityPlayerSP getClientBrand",
       expectedOwner: "net/minecraft/client/entity/EntityPlayerSP",
       expectedName: "getClientBrand",
+    },
+    {
+      label: "1.10.2",
+      query: "MinecraftServer getPlayerList",
+      expectedOwner: "net/minecraft/server/MinecraftServer",
+      expectedName: "getPlayerList",
+    },
+    {
+      label: "1.12",
+      query: "MinecraftServer getPlayerList",
+      expectedOwner: "net/minecraft/server/MinecraftServer",
+      expectedName: "getPlayerList",
     },
     {
       label: "1.12.2",
@@ -293,6 +311,26 @@ try {
     pass(`search_mapping assisted mcp ${item.label}`);
   }
 
+  const mcpPrerelease = await callJsonTool("search_mapping", {
+    query: "MinecraftServer getPlayerList",
+    namespace: "mcp",
+    version: "1.15-pre7",
+    limit: 5,
+    allow_classes: true,
+    allow_methods: true,
+    allow_fields: true,
+    translate_mode: "none",
+    assist: true,
+  });
+  assert(mcpPrerelease.namespace === "mcp", "mcp prerelease search should echo namespace");
+  assert(mcpPrerelease.version === "1.15-pre7", "mcp prerelease search should echo version");
+  assert(
+    mcpPrerelease.queryAnalysis?.ownerLikeTokens?.includes("MinecraftServer"),
+    "mcp prerelease search should return structured owner token analysis",
+  );
+  assert(Array.isArray(mcpPrerelease.relatedCandidates), "mcp prerelease search should return related candidates");
+  pass("search_mapping assisted mcp 1.15-pre7");
+
   const legacyYarn = await callJsonTool("search_mapping", {
     query: "PlayerEntity",
     namespace: "legacy-yarn",
@@ -305,6 +343,37 @@ try {
   });
   assertSearchResult(legacyYarn, "legacy-yarn", "PlayerEntity");
   pass("search_mapping legacy-yarn 1.12.2");
+
+  const coldLegacyYarnMatrix = [
+    {
+      version: "1.3.2",
+      query: "MinecraftServer",
+    },
+    {
+      version: "15w14a",
+      query: "MinecraftServer",
+    },
+  ];
+  for (const item of coldLegacyYarnMatrix) {
+    const coldLegacyYarn = await callJsonTool("search_mapping", {
+      query: item.query,
+      namespace: "legacy-yarn",
+      version: item.version,
+      limit: 5,
+      allow_classes: true,
+      allow_methods: false,
+      allow_fields: false,
+      translate_mode: "none",
+    });
+    assertSearchResult(coldLegacyYarn, "legacy-yarn", item.query);
+    assert(
+      coldLegacyYarn.results.some(
+        (result) => result.names?.yarn === "net/minecraft/server/MinecraftServer",
+      ),
+      `legacy-yarn ${item.version} should include MinecraftServer`,
+    );
+    pass(`search_mapping legacy-yarn ${item.version}`);
+  }
 
   const quilt = await callJsonTool("search_mapping", {
     query: "ServerPlayerEntity",
@@ -362,6 +431,17 @@ try {
     "forge 1.12.2 recommendations should include a verified JEI coordinate",
   );
   pass("get_ecosystem_recommendations forge 1.12.2");
+
+  const forgeMiddleEraRecommendations = await callJsonTool("get_ecosystem_recommendations", {
+    loader: "forge",
+    minecraft: "1.16.5",
+  });
+  assertVersionedRecommendation(
+    forgeMiddleEraRecommendations,
+    (item) => item.id === "jei" && item.coordinate?.startsWith("mezz.jei:jei-1.16.5:"),
+    "forge 1.16.5 recommendations should include a verified middle-era JEI coordinate",
+  );
+  pass("get_ecosystem_recommendations forge 1.16.5");
 
   const unsupported = await callTool("search_mapping", {
     query: "EntityPlayer",

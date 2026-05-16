@@ -207,6 +207,7 @@ When a tool is meant for an AI agent rather than a human, keep the following bou
 - Conservative joins are safer than eager joins. Only merge across namespaces when the source relationship is structurally defensible.
 - Optional recommendations should be clearly labeled as guidance, not as verified dependency coordinates.
 - Copyable dependency coordinates need a stronger contract than suggestions. Emit a coordinate only when an upstream metadata source verified the version, and include machine-readable fields such as `versioned: true` and `confidence: "verified"`; otherwise keep the item unversioned with a reason.
+- If a dependency uses different Maven artifact names across release eras, resolve an ordered candidate list against upstream metadata instead of assuming one naming rule. Emit the coordinate from the first verified candidate; if none verify, return an unversioned item that lists the attempted candidates.
 - Assisted lookup candidates should be separated from authoritative results. If a query helper returns "maybe" matches, put them in an explicitly named field such as `relatedCandidates` with confidence and reason metadata.
 
 ### Checklist for AI-facing lookup tools
@@ -217,4 +218,5 @@ When a tool is meant for an AI agent rather than a human, keep the following bou
 - [ ] Cross-namespace joins are conservative and reproducible
 - [ ] Optional suggestions cannot be mistaken for authoritative facts
 - [ ] Copyable dependency coordinates are only emitted after source metadata verification
+- [ ] Version-era artifact aliases are resolved through metadata-backed candidates, not hard-coded as a single guessed coordinate
 - [ ] Assisted or low-confidence candidates are not mixed into primary result arrays

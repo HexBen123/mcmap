@@ -295,37 +295,48 @@ async function resolveJeiRecommendation(
   minecraft: string,
   loader: "forge" | "neoforge",
 ): Promise<EcosystemRecommendation | undefined> {
-  const artifactId = jeiArtifactId(minecraft, loader);
-  const definition = {
+  const artifactIds = jeiArtifactIds(minecraft, loader);
+  const baseDefinition = {
     id: "jei",
     name: "Just Enough Items",
     groupId: "mezz.jei",
-    artifactId,
     kind: "utility" as const,
-    source: `${BLAZE_MAVEN}/mezz/jei/${artifactId}/maven-metadata.xml`,
     repositories: [BLAZE_MAVEN, "https://modmaven.dev", "https://dvs1.progwml6.com/files/maven"],
   };
+  const failures: string[] = [];
 
-  try {
-    const versions = await fetchMavenVersions(metadataUrl(BLAZE_MAVEN, definition.groupId, artifactId));
-    const version = versions.sort(compareLooseVersions).at(-1);
-    if (!version) {
-      return makeUnversionedRecommendation({
+  for (const artifactId of artifactIds) {
+    const source = metadataUrl(BLAZE_MAVEN, baseDefinition.groupId, artifactId);
+    const definition = {
+      ...baseDefinition,
+      artifactId,
+      source,
+    };
+
+    try {
+      const versions = await fetchMavenVersions(source);
+      const version = versions.sort(compareLooseVersions).at(-1);
+      if (!version) {
+        failures.push(`${artifactId}: no Maven versions found`);
+        continue;
+      }
+      return makeVersionedRecommendation({
         ...definition,
-        reason: `No JEI Maven versions were found for Minecraft ${minecraft} and loader ${loader}.`,
+        version,
+        versionSource: definition.source,
       });
+    } catch (error) {
+      failures.push(`${artifactId}: ${errorMessage(error)}`);
     }
-    return makeVersionedRecommendation({
-      ...definition,
-      version,
-      versionSource: definition.source,
-    });
-  } catch (error) {
-    return makeUnversionedRecommendation({
-      ...definition,
-      reason: `JEI metadata lookup failed: ${errorMessage(error)}`,
-    });
   }
+
+  const artifactId = artifactIds[0] ?? `jei-${minecraft}-${loader}-api`;
+  return makeUnversionedRecommendation({
+    ...baseDefinition,
+    artifactId,
+    source: metadataUrl(BLAZE_MAVEN, baseDefinition.groupId, artifactId),
+    reason: `JEI metadata lookup failed for candidates ${artifactIds.join(", ")}: ${failures.join("; ")}`,
+  });
 }
 
 async function getFabricLoaderVersions(stableOnly: boolean, limit: number): Promise<LoaderVersionResult> {
@@ -580,11 +591,14 @@ function metadataUrl(baseUrl: string, groupId: string, artifactId: string): stri
   return `${baseUrl.replace(/\/$/, "")}/${groupId.replaceAll(".", "/")}/${artifactId}/maven-metadata.xml`;
 }
 
-function jeiArtifactId(minecraft: string, loader: "forge" | "neoforge"): string {
-  if (compareLooseVersions(minecraft, "1.13") < 0) {
-    return `jei_${minecraft}`;
+function jeiArtifactIds(minecraft: string, loader: "forge" | "neoforge"): string[] {
+  if (loader === "neoforge") {
+    return [`jei-${minecraft}-neoforge-api`];
   }
-  return `jei-${minecraft}-${loader}-api`;
+  if (compareLooseVersions(minecraft, "1.13") < 0) {
+    return [`jei_${minecraft}`];
+  }
+  return [...new Set([`jei-${minecraft}-forge-api`, `jei-${minecraft}`])];
 }
 
 function errorMessage(error: unknown): string {
