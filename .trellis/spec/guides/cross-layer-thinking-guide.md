@@ -209,6 +209,11 @@ When a tool is meant for an AI agent rather than a human, keep the following bou
 - Copyable dependency coordinates need a stronger contract than suggestions. Emit a coordinate only when an upstream metadata source verified the version, and include machine-readable fields such as `versioned: true` and `confidence: "verified"`; otherwise keep the item unversioned with a reason.
 - If a dependency uses different Maven artifact names across release eras, resolve an ordered candidate list against upstream metadata instead of assuming one naming rule. Emit the coordinate from the first verified candidate; if none verify, return an unversioned item that lists the attempted candidates.
 - Assisted lookup candidates should be separated from authoritative results. If a query helper returns "maybe" matches, put them in an explicitly named field such as `relatedCandidates` with confidence and reason metadata.
+- Compact model-facing output should not replace the machine contract. If an
+  MCP tool offers a compact text projection, keep the canonical facts in
+  `structuredContent`, declare an `outputSchema`, and provide a readable
+  `resource_link` for full/debug payloads when the compact text is only a
+  bounded projection.
 
 ### Checklist for AI-facing lookup tools
 
@@ -220,3 +225,5 @@ When a tool is meant for an AI agent rather than a human, keep the following bou
 - [ ] Copyable dependency coordinates are only emitted after source metadata verification
 - [ ] Version-era artifact aliases are resolved through metadata-backed candidates, not hard-coded as a single guessed coordinate
 - [ ] Assisted or low-confidence candidates are not mixed into primary result arrays
+- [ ] Compact output is backed by validated `structuredContent` and a readable
+      full-result resource when it omits or samples canonical data
