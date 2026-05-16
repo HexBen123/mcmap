@@ -158,19 +158,21 @@ export function formatNamespacesCompact(payload: NamespaceListPayload, fullUri?:
 export function formatVersionsCompact(payload: VersionList, fullUri?: string): string {
   const stableSample = boundedSample(payload.stable);
   const snapshotSample = boundedSample(payload.snapshots);
+  const aliasKeys = payload.aliases ? Object.keys(payload.aliases) : [];
   const lines = [
     `!summary ${payload.namespace} supports ${payload.stable.length} stable versions and ${payload.snapshots.length} snapshots.`,
     compactHeader("mcmap.versions.v1", {
       namespace: payload.namespace,
       stable_count: payload.stable.length,
       snapshot_count: payload.snapshots.length,
+      alias_count: aliasKeys.length || undefined,
       source: payload.source,
     }),
     `stable_sample=${escapeCell(stableSample)}`,
     `snapshot_sample=${escapeCell(snapshotSample)}`,
   ];
-  if (payload.aliases && Object.keys(payload.aliases).length > 0) {
-    lines.push(`aliases=${escapeCell(formatRecord(payload.aliases))}`);
+  if (aliasKeys.length > 0) {
+    lines.push(`alias_key_sample=${escapeCell(boundedSample(aliasKeys))}`);
   }
   if (fullUri) {
     lines.push(`@full ${escapeCell(fullUri)}`);

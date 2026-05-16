@@ -36,7 +36,7 @@ import { getCacheRoot } from "./utils/cache.js";
 
 const server = new McpServer({
   name: "mcmap",
-  version: "1.4.0",
+  version: "1.4.5",
 });
 
 const compactFormatSchema = z.enum(["json", "compact"]).default("json").describe("输出格式，默认 json；compact 面向 AI 上下文节省 token");

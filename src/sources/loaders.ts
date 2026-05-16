@@ -126,6 +126,17 @@ const FABRIC_ECOSYSTEM: ModrinthBackedRecommendationDefinition[] = [
 
 const FORGE_ECOSYSTEM: ModrinthBackedRecommendationDefinition[] = [
   {
+    id: "architectury-api",
+    name: "Architectury API",
+    modrinthProject: "architectury-api",
+    groupId: "dev.architectury",
+    artifactId: "architectury-forge",
+    kind: "api",
+    mavenBaseUrl: ARCHITECTURY_MAVEN,
+    source: `${MODRINTH_API}/project/architectury-api/version and ${ARCHITECTURY_MAVEN}`,
+    repositories: [ARCHITECTURY_MAVEN, SHEDANIEL_MAVEN],
+  },
+  {
     id: "cloth-config",
     name: "Cloth Config",
     modrinthProject: "cloth-config",
@@ -134,6 +145,17 @@ const FORGE_ECOSYSTEM: ModrinthBackedRecommendationDefinition[] = [
     kind: "ui",
     mavenBaseUrl: SHEDANIEL_MAVEN,
     source: `${MODRINTH_API}/project/cloth-config/version and ${SHEDANIEL_MAVEN}`,
+    repositories: [SHEDANIEL_MAVEN],
+  },
+  {
+    id: "rei",
+    name: "Roughly Enough Items",
+    modrinthProject: "rei",
+    groupId: "me.shedaniel",
+    artifactId: "RoughlyEnoughItems-forge",
+    kind: "utility",
+    mavenBaseUrl: SHEDANIEL_MAVEN,
+    source: `${MODRINTH_API}/project/rei/version and ${SHEDANIEL_MAVEN}`,
     repositories: [SHEDANIEL_MAVEN],
   },
 ];

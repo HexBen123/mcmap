@@ -32,7 +32,7 @@ try {
     clientInfo: { name: "local-smoke", version: "0.1.0" },
   });
   assert(init.result?.serverInfo?.name === "mcmap", "initialize should return mcmap serverInfo");
-  assert(init.result?.serverInfo?.version === "1.4.0", "initialize should return mcmap 1.4.0 serverInfo");
+  assert(init.result?.serverInfo?.version === "1.4.5", "initialize should return mcmap 1.4.5 serverInfo");
   pass("initialize");
 
   notify("notifications/initialized");
@@ -518,6 +518,39 @@ try {
   );
   pass("get_ecosystem_recommendations forge 1.16.5");
 
+  const forgeModernRecommendations = await callJsonTool("get_ecosystem_recommendations", {
+    loader: "forge",
+    minecraft: "1.21.1",
+  });
+  for (const id of ["architectury-api", "cloth-config", "rei", "jei"]) {
+    assert(
+      forgeModernRecommendations.recommendations.some((item) => item.id === id),
+      `forge 1.21.1 recommendations should include ${id}`,
+    );
+  }
+  assertVersionedRecommendation(
+    forgeModernRecommendations,
+    (item) => item.id === "cloth-config" && item.coordinate?.startsWith("me.shedaniel.cloth:cloth-config-forge:"),
+    "forge 1.21.1 recommendations should include a verified Cloth Config coordinate when upstream metadata allows it",
+  );
+  pass("get_ecosystem_recommendations forge 1.21.1");
+
+  const forgeVerifiedRecommendations = await callJsonTool("get_ecosystem_recommendations", {
+    loader: "forge",
+    minecraft: "1.20.1",
+  });
+  assertVersionedRecommendation(
+    forgeVerifiedRecommendations,
+    (item) => item.id === "architectury-api" && item.coordinate?.startsWith("dev.architectury:architectury-forge:"),
+    "forge 1.20.1 recommendations should include a verified Architectury Forge coordinate",
+  );
+  assertVersionedRecommendation(
+    forgeVerifiedRecommendations,
+    (item) => item.id === "rei" && item.coordinate?.startsWith("me.shedaniel:RoughlyEnoughItems-forge:"),
+    "forge 1.20.1 recommendations should include a verified REI Forge coordinate",
+  );
+  pass("get_ecosystem_recommendations forge 1.20.1");
+
   const unsupported = await callTool("search_mapping", {
     query: "EntityPlayer",
     namespace: "intermediary",
@@ -558,12 +591,21 @@ try {
   });
   assert(compactVersions.text.includes("@S=mcmap.versions.v1"), "compact namespace versions should include schema");
   assert(compactVersions.text.includes("stable_sample="), "compact namespace versions should include bounded stable sample");
+  assert(compactVersions.text.includes("alias_count="), "compact namespace versions should expose alias count");
+  assert(compactVersions.text.includes("alias_key_sample="), "compact namespace versions should expose bounded alias keys");
+  assert(!compactVersions.text.includes("aliases="), "compact namespace versions should not dump full alias map");
+  assert(compactVersions.text.length < 2000, "compact namespace versions should stay bounded");
   const compactVersionsLink = resourceLink(compactVersions.result);
   assert(compactVersionsLink, "compact namespace versions should include resource_link");
   const compactVersionsResource = await readResource(compactVersionsLink.uri);
+  const compactVersionsPayload = JSON.parse(compactVersionsResource.text);
   assert(
-    JSON.parse(compactVersionsResource.text).namespace === "yarn",
+    compactVersionsPayload.namespace === "yarn",
     "compact namespace versions resource should contain full JSON payload",
+  );
+  assert(
+    compactVersionsPayload.aliases?.["1.21.1"]?.some((item) => item.includes("1.21.1+build.")),
+    "compact namespace versions resource should retain full alias payload",
   );
   pass("get_namespace_versions compact resource");
 
