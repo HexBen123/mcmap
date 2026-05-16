@@ -18,6 +18,17 @@ export interface NamespaceListPayload {
     aliases: string[];
     description: string;
     supports: string[];
+    status?: string;
+    searchTarget?: string;
+    versionSummary?: {
+      stableCount: number;
+      snapshotCount: number;
+      aliasCount?: number;
+      latestStable?: string;
+      latestSnapshot?: string;
+      status: string;
+      reason?: string;
+    };
   }>;
 }
 
@@ -133,17 +144,22 @@ export function asError(
 }
 
 export function formatNamespacesCompact(payload: NamespaceListPayload, fullUri?: string): string {
+  const searchable = payload.namespaces.filter((namespace) => namespace.status !== "known-unsupported").length;
   const lines = [
-    `!summary ${payload.namespaces.length} namespaces available.`,
+    `!summary ${payload.namespaces.length} namespaces listed; ${searchable} have search or metadata support.`,
     compactHeader("mcmap.namespaces.v1", {
       count: payload.namespaces.length,
       cacheRoot: payload.cacheRoot,
     }),
-    dsvHeader(["id", "aliases", "supports", "description"]),
+    dsvHeader(["id", "aliases", "status", "stable", "snapshots", "latest", "supports", "description"]),
     ...payload.namespaces.map((namespace) =>
       dsvRow([
         namespace.id,
         namespace.aliases.join(","),
+        namespace.status ?? "",
+        namespace.versionSummary?.status === "available" ? namespace.versionSummary.stableCount : "",
+        namespace.versionSummary?.status === "available" ? namespace.versionSummary.snapshotCount : "",
+        namespace.versionSummary?.latestStable ?? "",
         namespace.supports.join(","),
         namespace.description,
       ]),
@@ -256,16 +272,32 @@ export function formatLoaderVersionsCompact(
   payload: LoaderVersionResult,
   fullUri?: string,
 ): string {
+  const ecosystemRows = payload.versions.flatMap((value) => {
+    const row = isRecord(value) ? value : {};
+    const minecraft = String(row.minecraft ?? "");
+    const recommendations = Array.isArray(row.ecosystemRecommendations)
+      ? row.ecosystemRecommendations
+      : [];
+    return recommendations.map((item) => ({ minecraft, item }));
+  });
   const lines = [
     `!summary ${payload.loader}: ${payload.versions.length} loader version rows.`,
     compactHeader("mcmap.loader_versions.v1", {
       loader: payload.loader,
       count: payload.versions.length,
+      view: payload.view,
       source: payload.source,
     }),
     dsvHeader(["mc", "loader", "api", "mappings", "extra"]),
     ...payload.versions.map(formatLoaderVersionRow),
   ];
+  if (ecosystemRows.length > 0) {
+    lines.push(
+      `@section ecosystem n=${ecosystemRows.length}`,
+      dsvHeader(["mc", "id", "name", "coordinate", "confidence", "reason"]),
+      ...ecosystemRows.map(({ minecraft, item }) => formatLoaderEcosystemRow(minecraft, item)),
+    );
+  }
   if (fullUri) {
     lines.push(`@full ${escapeCell(fullUri)}`);
   }
@@ -377,6 +409,7 @@ function formatLoaderVersionRow(value: unknown): string {
     "legacyFabricApi",
     "yarn",
     "intermediary",
+    "ecosystemRecommendations",
   ]);
   const extra = Object.fromEntries(
     Object.entries(row).filter(([key]) => !knownKeys.has(key)),
@@ -390,10 +423,24 @@ function formatLoaderVersionRow(value: unknown): string {
   ]);
 }
 
+function formatLoaderEcosystemRow(minecraft: string, value: unknown): string {
+  const row = isRecord(value) ? value : {};
+  return dsvRow([
+    minecraft,
+    row.id,
+    row.name,
+    row.coordinate,
+    row.confidence,
+    row.reason,
+  ]);
+}
+
 function primaryName(record: Record<string, unknown>, namespace: string): string {
   const names = isRecord(record.names) ? record.names : {};
   const candidates = [
     names[namespace],
+    namespace === "mojang" || namespace === "mojang_raw" ? names.mojmap : undefined,
+    namespace === "mojang_srg" ? names.mcp ?? names.srg : undefined,
     namespace === "yarn" ? names.named : undefined,
     namespace === "mcp" ? names.srg : undefined,
     names.yarn,

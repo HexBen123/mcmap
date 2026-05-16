@@ -32,7 +32,7 @@ try {
     clientInfo: { name: "local-smoke", version: "0.1.0" },
   });
   assert(init.result?.serverInfo?.name === "mcmap", "initialize should return mcmap serverInfo");
-  assert(init.result?.serverInfo?.version === "1.4.5", "initialize should return mcmap 1.4.5 serverInfo");
+  assert(init.result?.serverInfo?.version === "1.5.0", "initialize should return mcmap 1.5.0 serverInfo");
   pass("initialize");
 
   notify("notifications/initialized");
@@ -50,11 +50,12 @@ try {
     const definition = listed.result?.tools?.find((item) => item.name === tool);
     assert(definition?.outputSchema, `tools/list should include outputSchema for ${tool}`);
   }
-  assertToolFormat(listed, "list_namespaces", ["json", "compact"]);
-  assertToolFormat(listed, "get_namespace_versions", ["json", "compact"]);
-  assertToolFormat(listed, "search_mapping", ["json", "human", "compact"]);
-  assertToolFormat(listed, "get_loader_versions", ["json", "compact"]);
-  assertToolFormat(listed, "get_ecosystem_recommendations", ["json", "compact"]);
+  assertToolFormat(listed, "list_namespaces", ["compact", "json"], "compact");
+  assertToolFormat(listed, "get_namespace_versions", ["compact", "json"], "compact");
+  assertToolFormat(listed, "search_mapping", ["compact", "json", "human"], "compact");
+  assertToolFormat(listed, "get_loader_versions", ["compact", "json"], "compact");
+  assertToolEnum(listed, "get_loader_versions", "view", ["core", "with_ecosystem"], "core");
+  assertToolFormat(listed, "get_ecosystem_recommendations", ["compact", "json"], "compact");
   pass("tools/list");
 
   const resourceTemplates = await request("resources/templates/list");
@@ -75,7 +76,7 @@ try {
     "parchment",
     "mcp",
   ]) {
-    const result = await callJsonTool("get_namespace_versions", { namespace });
+    const result = await callJsonTool("get_namespace_versions", { namespace, format: "json" });
     assert(result.namespace === namespace, `${namespace} version list should echo namespace`);
     assert(Array.isArray(result.stable), `${namespace} stable versions should be an array`);
     assert(Array.isArray(result.snapshots), `${namespace} snapshot versions should be an array`);
@@ -91,6 +92,7 @@ try {
     allow_methods: false,
     allow_fields: false,
     translate_mode: "none",
+    format: "json",
   });
   assertSearchResult(yarn, "yarn", "ServerPlayer");
   assert(yarn._result.structuredContent?.query === "ServerPlayer", "json search should include structuredContent");
@@ -107,6 +109,7 @@ try {
     allow_methods: false,
     allow_fields: false,
     translate_mode: "none",
+    format: "json",
   });
   assertSearchResult(intermediary, "intermediary", "class_3222");
   assert(
@@ -124,6 +127,7 @@ try {
     allow_methods: true,
     allow_fields: false,
     translate_mode: "ba",
+    format: "json",
   });
   assertSearchResult(reverseYarn, "yarn", "method_45729");
   assert(
@@ -141,6 +145,7 @@ try {
     allow_methods: true,
     allow_fields: true,
     translate_mode: "none",
+    format: "json",
   });
   assertSearchResult(fuzzy, "yarn", "network");
   assert(
@@ -158,6 +163,7 @@ try {
     allow_methods: true,
     allow_fields: false,
     translate_mode: "none",
+    format: "json",
   });
   assertSearchResult(readableDescriptor, "yarn", "sendChatMessage");
   assert(
@@ -178,6 +184,7 @@ try {
     allow_methods: true,
     allow_fields: true,
     translate_mode: "none",
+    format: "json",
   });
   assert(strictMixed.count === 0, "strict mixed query should keep default empty result behavior");
   assert(!("relatedCandidates" in strictMixed), "strict mixed query should not include assisted candidates by default");
@@ -193,6 +200,7 @@ try {
     allow_fields: true,
     translate_mode: "none",
     assist: true,
+    format: "json",
   });
   assert(assistedYarn.count === 0, "assisted mixed query should not move candidates into primary results");
   assert(
@@ -255,17 +263,22 @@ try {
   pass("search_mapping human format");
 
   const mojmap = await callJsonTool("search_mapping", {
-    query: "Player",
+    query: "MinecraftServer",
     namespace: "mojmap",
-    version: "1.18.2",
+    version: "1.20.1",
     limit: 3,
     allow_classes: true,
     allow_methods: false,
     allow_fields: false,
     translate_mode: "none",
+    format: "json",
   });
-  assertSearchResult(mojmap, "mojmap", "Player");
-  pass("search_mapping mojmap 1.18.2");
+  assertSearchResult(mojmap, "mojmap", "MinecraftServer");
+  assert(
+    mojmap.results.some((result) => result.names?.intermediary || result.names?.yarn),
+    "mojmap class results should be enriched with Fabric bridge names when available",
+  );
+  pass("search_mapping mojmap bridge 1.20.1");
 
   const mcp = await callJsonTool("search_mapping", {
     query: "getEntityWorld",
@@ -276,6 +289,7 @@ try {
     allow_methods: true,
     allow_fields: false,
     translate_mode: "none",
+    format: "json",
   });
   assertSearchResult(mcp, "mcp", "getEntityWorld");
   assert(
@@ -340,6 +354,7 @@ try {
       allow_fields: true,
       translate_mode: "none",
       assist: true,
+      format: "json",
     });
     assert(assisted.count === 0, `assisted MCP ${item.label} should keep primary results empty for mixed phrase`);
     assert(
@@ -368,6 +383,7 @@ try {
     allow_fields: true,
     translate_mode: "none",
     assist: true,
+    format: "json",
   });
   assert(mcpPrerelease.namespace === "mcp", "mcp prerelease search should echo namespace");
   assert(mcpPrerelease.version === "1.15-pre7", "mcp prerelease search should echo version");
@@ -387,6 +403,7 @@ try {
     allow_methods: false,
     allow_fields: false,
     translate_mode: "none",
+    format: "json",
   });
   assertSearchResult(legacyYarn, "legacy-yarn", "PlayerEntity");
   pass("search_mapping legacy-yarn 1.12.2");
@@ -411,6 +428,7 @@ try {
       allow_methods: false,
       allow_fields: false,
       translate_mode: "none",
+      format: "json",
     });
     assertSearchResult(coldLegacyYarn, "legacy-yarn", item.query);
     assert(
@@ -422,6 +440,42 @@ try {
     pass(`search_mapping legacy-yarn ${item.version}`);
   }
 
+  const legacyYarnClassRanking = await callJsonTool("search_mapping", {
+    query: "EntityRenderer",
+    namespace: "legacy-yarn",
+    version: "1.8.9",
+    limit: 5,
+    allow_classes: true,
+    allow_methods: true,
+    allow_fields: true,
+    translate_mode: "none",
+    format: "json",
+  });
+  assert(
+    legacyYarnClassRanking.results[0]?.kind === "class" &&
+      legacyYarnClassRanking.results[0]?.names?.yarn === "net/minecraft/client/render/entity/EntityRenderer",
+    "legacy-yarn class-shaped queries should rank exact class leaf matches before exact member names",
+  );
+  pass("search_mapping legacy-yarn class ranking 1.8.9");
+
+  const legacyYarnWorldRendererRanking = await callJsonTool("search_mapping", {
+    query: "WorldRenderer",
+    namespace: "legacy-yarn",
+    version: "1.7.10",
+    limit: 5,
+    allow_classes: true,
+    allow_methods: true,
+    allow_fields: true,
+    translate_mode: "none",
+    format: "json",
+  });
+  assert(
+    legacyYarnWorldRendererRanking.results[0]?.kind === "class" &&
+      legacyYarnWorldRendererRanking.results[0]?.names?.yarn === "net/minecraft/client/render/WorldRenderer",
+    "legacy-yarn 1.7.10 WorldRenderer should rank the class before fields",
+  );
+  pass("search_mapping legacy-yarn class ranking 1.7.10");
+
   const quilt = await callJsonTool("search_mapping", {
     query: "ServerPlayerEntity",
     namespace: "quilt-mappings",
@@ -431,15 +485,43 @@ try {
     allow_methods: false,
     allow_fields: false,
     translate_mode: "none",
+    format: "json",
   });
   assertSearchResult(quilt, "quilt-mappings", "ServerPlayerEntity");
   pass("search_mapping quilt-mappings 1.21.1");
+
+  const mojangAlias = await callJsonTool("search_mapping", {
+    query: "MinecraftServer",
+    namespace: "mojang",
+    version: "1.20.1",
+    limit: 3,
+    allow_classes: true,
+    allow_methods: false,
+    allow_fields: false,
+    translate_mode: "none",
+    format: "json",
+  });
+  assertSearchResult(mojangAlias, "mojang", "MinecraftServer");
+  assert(
+    mojangAlias.results[0]?.names?.mojmap === "net/minecraft/server/MinecraftServer",
+    "mojang alias should search Mojmap records",
+  );
+  pass("search_mapping mojang alias");
+
+  const mojangSrgVersions = await callJsonTool("get_namespace_versions", {
+    namespace: "mojang_srg",
+    format: "json",
+  });
+  assert(mojangSrgVersions.namespace === "mojang_srg", "mojang_srg version list should echo alias namespace");
+  assert(mojangSrgVersions.stable.includes("1.7.10"), "mojang_srg should expose MCP-backed legacy versions");
+  pass("get_namespace_versions mojang_srg alias");
 
   for (const loader of ["fabric", "forge", "neoforge", "legacy-fabric"]) {
     const result = await callJsonTool("get_loader_versions", {
       loader,
       stable_only: true,
       limit: 3,
+      format: "json",
     });
     assert(result.loader === loader, `${loader} loader result should echo loader`);
     assert(Array.isArray(result.versions), `${loader} versions should be an array`);
@@ -451,7 +533,6 @@ try {
     loader: "fabric",
     stable_only: true,
     limit: 2,
-    format: "compact",
   });
   assert(compactLoaderVersions.text.includes("@S=mcmap.loader_versions.v1"), "compact loader versions should include schema");
   assert(
@@ -461,9 +542,24 @@ try {
   assert(resourceLink(compactLoaderVersions.result), "compact loader versions should include resource_link");
   pass("get_loader_versions compact");
 
+  const combinedLoaderVersions = await callJsonTool("get_loader_versions", {
+    loader: "forge",
+    stable_only: true,
+    limit: 1,
+    view: "with_ecosystem",
+    format: "json",
+  });
+  assert(combinedLoaderVersions.view === "with_ecosystem", "combined loader versions should echo with_ecosystem view");
+  assert(
+    combinedLoaderVersions.versions[0]?.ecosystemRecommendations?.some((item) => item.id === "jei"),
+    "combined loader versions should include per-version ecosystem recommendations",
+  );
+  pass("get_loader_versions with_ecosystem");
+
   const recommendations = await callJsonTool("get_ecosystem_recommendations", {
     loader: "fabric",
     minecraft: "1.21.1",
+    format: "json",
   });
   assert(recommendations.loader === "fabric", "recommendations should echo loader");
   assert(
@@ -485,7 +581,6 @@ try {
   const compactRecommendations = await callTextTool("get_ecosystem_recommendations", {
     loader: "fabric",
     minecraft: "1.21.1",
-    format: "compact",
   });
   assert(compactRecommendations.text.includes("@S=mcmap.ecosystem.v1"), "compact recommendations should include schema");
   assert(compactRecommendations.text.includes("verified"), "compact recommendations should preserve confidence");
@@ -499,6 +594,7 @@ try {
   const forgeRecommendations = await callJsonTool("get_ecosystem_recommendations", {
     loader: "forge",
     minecraft: "1.12.2",
+    format: "json",
   });
   assertVersionedRecommendation(
     forgeRecommendations,
@@ -510,6 +606,7 @@ try {
   const forgeMiddleEraRecommendations = await callJsonTool("get_ecosystem_recommendations", {
     loader: "forge",
     minecraft: "1.16.5",
+    format: "json",
   });
   assertVersionedRecommendation(
     forgeMiddleEraRecommendations,
@@ -521,6 +618,7 @@ try {
   const forgeModernRecommendations = await callJsonTool("get_ecosystem_recommendations", {
     loader: "forge",
     minecraft: "1.21.1",
+    format: "json",
   });
   for (const id of ["architectury-api", "cloth-config", "rei", "jei"]) {
     assert(
@@ -538,6 +636,7 @@ try {
   const forgeVerifiedRecommendations = await callJsonTool("get_ecosystem_recommendations", {
     loader: "forge",
     minecraft: "1.20.1",
+    format: "json",
   });
   assertVersionedRecommendation(
     forgeVerifiedRecommendations,
@@ -560,6 +659,7 @@ try {
     allow_methods: false,
     allow_fields: false,
     translate_mode: "none",
+    format: "json",
   });
   assert(unsupported.isError, "unsupported mapping search should return tool error");
   const unsupportedPayload = JSON.parse(toolText(unsupported));
@@ -587,7 +687,6 @@ try {
 
   const compactVersions = await callTextTool("get_namespace_versions", {
     namespace: "yarn",
-    format: "compact",
   });
   assert(compactVersions.text.includes("@S=mcmap.versions.v1"), "compact namespace versions should include schema");
   assert(compactVersions.text.includes("stable_sample="), "compact namespace versions should include bounded stable sample");
@@ -610,12 +709,21 @@ try {
   pass("get_namespace_versions compact resource");
 
   const compactNamespaces = await callTextTool("list_namespaces", {
-    format: "compact",
   });
   assert(compactNamespaces.text.includes("@S=mcmap.namespaces.v1"), "compact namespaces should include schema");
   assert(
     compactNamespaces.result.structuredContent?.namespaces?.some((item) => item.id === "yarn"),
     "compact namespaces should include structuredContent",
+  );
+  assert(
+    compactNamespaces.result.structuredContent?.namespaces?.some(
+      (item) => item.id === "yarn" && item.versionSummary?.stableCount > 0,
+    ),
+    "compact namespaces should include version count summaries",
+  );
+  assert(
+    compactNamespaces.result.structuredContent?.namespaces?.some((item) => item.id === "mojang_hashed"),
+    "compact namespaces should list known linkie-style cold namespaces",
   );
   assert(resourceLink(compactNamespaces.result), "compact namespaces should include resource_link");
   pass("list_namespaces compact");
@@ -692,12 +800,19 @@ async function readResource(uri) {
   return content;
 }
 
-function assertToolFormat(listed, name, expectedValues) {
+function assertToolFormat(listed, name, expectedValues, expectedDefault) {
+  assertToolEnum(listed, name, "format", expectedValues, expectedDefault);
+}
+
+function assertToolEnum(listed, name, propertyName, expectedValues, expectedDefault) {
   const tool = listed.result?.tools?.find((item) => item.name === name);
-  const formatProperty = tool?.inputSchema?.properties?.format;
-  assert(formatProperty, `${name} should expose format input`);
+  const formatProperty = tool?.inputSchema?.properties?.[propertyName];
+  assert(formatProperty, `${name} should expose ${propertyName} input`);
   for (const value of expectedValues) {
-    assert(formatProperty.enum?.includes(value), `${name} format should include ${value}`);
+    assert(formatProperty.enum?.includes(value), `${name} ${propertyName} should include ${value}`);
+  }
+  if (expectedDefault !== undefined) {
+    assert(formatProperty.default === expectedDefault, `${name} ${propertyName} should default to ${expectedDefault}`);
   }
 }
 

@@ -4,6 +4,10 @@ export type Namespace =
   | "obfuscated"
   | "official"
   | "mojmap"
+  | "mojang"
+  | "mojang_raw"
+  | "mojang_srg"
+  | "mojang_hashed"
   | "intermediary"
   | "yarn"
   | "named"
@@ -96,6 +100,7 @@ export interface LoaderVersionResult {
   loader: string;
   versions: unknown[];
   source: string;
+  view?: "core" | "with_ecosystem";
 }
 
 export type EcosystemRecommendationKind = "api" | "utility" | "ui";

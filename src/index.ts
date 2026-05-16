@@ -24,22 +24,17 @@ import {
   searchMappingOutputSchema,
   versionListOutputSchema,
 } from "./schemas.js";
+import { getVersionListForNamespace, listNamespaceInfoWithVersions } from "./namespaces.js";
 import { searchMappingsWithAssistance } from "./search.js";
-import { getIntermediaryVersionList, getYarnVersionList } from "./sources/fabric.js";
-import { getLegacyYarnVersionList } from "./sources/legacyFabric.js";
 import { getEcosystemRecommendations, getLoaderVersions } from "./sources/loaders.js";
-import { getMcpVersionList } from "./sources/mcp.js";
-import { getMojangVersionList } from "./sources/mojang.js";
-import { getParchmentVersionList } from "./sources/parchment.js";
-import { getQuiltMappingsVersionList } from "./sources/quilt.js";
 import { getCacheRoot } from "./utils/cache.js";
 
 const server = new McpServer({
   name: "mcmap",
-  version: "1.4.5",
+  version: "1.5.0",
 });
 
-const compactFormatSchema = z.enum(["json", "compact"]).default("json").describe("输出格式，默认 json；compact 面向 AI 上下文节省 token");
+const compactFormatSchema = z.enum(["compact", "json"]).default("compact").describe("输出格式，默认 compact；json 用于脚本解析和调试");
 
 server.registerResource(
   "mcmap-full-results",
@@ -70,50 +65,7 @@ server.registerTool(
   async ({ format }) => {
     const payload = {
       cacheRoot: getCacheRoot(),
-      namespaces: [
-        {
-          id: "mojmap",
-          aliases: ["official"],
-          description: "Mojang official mappings from the official version manifest.",
-          supports: ["class", "method", "field"],
-        },
-        {
-          id: "intermediary",
-          aliases: [],
-          description: "Fabric Intermediary mappings from Fabric Maven.",
-          supports: ["class", "method", "field"],
-        },
-        {
-          id: "yarn",
-          aliases: ["named"],
-          description: "Fabric Yarn named mappings from Fabric Maven.",
-          supports: ["class", "method", "field", "param"],
-        },
-        {
-          id: "legacy-yarn",
-          aliases: [],
-          description: "Legacy Fabric Yarn named mappings from Legacy Fabric Maven.",
-          supports: ["class", "method", "field", "param"],
-        },
-        {
-          id: "quilt-mappings",
-          aliases: [],
-          description: "Quilt Mappings named mappings from Quilt Maven.",
-          supports: ["class", "method", "field", "param"],
-        },
-        {
-          id: "mcp",
-          aliases: ["srg"],
-          description: "Legacy Forge MCP/SRG mappings from Forge Maven MCPConfig, MCP CSV, and historical SRG/CSRG artifacts.",
-          supports: ["class", "method", "field", "param"],
-        },
-        {
-          id: "parchment",
-          aliases: [],
-          description: "Parchment Mojmap parameter and Javadoc metadata. Version metadata is supported; full search support is incremental.",
-          supports: ["param", "comment"],
-        },
-      ],
+      namespaces: await listNamespaceInfoWithVersions(),
     };
     if (format === "compact") {
       const resourceLink = registerFullResultResource("list_namespaces", "mcmap.namespaces.v1", payload);
@@ -134,42 +86,14 @@ server.registerTool(
     inputSchema: z.object({
       namespace: z
         .string()
-        .describe("命名空间 ID，如 yarn、legacy-yarn、quilt-mappings、mojmap、mcp、intermediary、parchment"),
+        .describe("命名空间 ID，如 yarn、legacy-yarn、quilt-mappings、mojmap/mojang、mcp/srg、intermediary、parchment"),
       format: compactFormatSchema,
     }),
     outputSchema: versionListOutputSchema,
   },
   async ({ namespace, format }) => {
     try {
-      let payload;
-      switch (namespace.toLowerCase()) {
-        case "mojmap":
-        case "official":
-          payload = await getMojangVersionList();
-          break;
-        case "intermediary":
-          payload = await getIntermediaryVersionList();
-          break;
-        case "yarn":
-        case "named":
-          payload = await getYarnVersionList();
-          break;
-        case "legacy-yarn":
-          payload = await getLegacyYarnVersionList();
-          break;
-        case "quilt-mappings":
-          payload = await getQuiltMappingsVersionList();
-          break;
-        case "mcp":
-        case "srg":
-          payload = await getMcpVersionList();
-          break;
-        case "parchment":
-          payload = await getParchmentVersionList();
-          break;
-        default:
-          throw new Error(`Unsupported namespace: ${namespace}`);
-      }
+      const payload = await getVersionListForNamespace(namespace);
       if (format === "compact") {
         const resourceLink = registerFullResultResource("get_namespace_versions", "mcmap.versions.v1", payload);
         return asToolResult({
@@ -199,7 +123,7 @@ server.registerTool(
       allow_methods: z.boolean().default(true).describe("是否包含方法结果"),
       allow_fields: z.boolean().default(true).describe("是否包含字段结果"),
       translate_mode: z.enum(["none", "ab", "ba"]).default("none").describe("兼容字段，当前搜索模式下保留"),
-      format: z.enum(["json", "human", "compact"]).default("json").describe("输出格式，默认 json；compact 面向 AI 上下文节省 token"),
+      format: z.enum(["compact", "json", "human"]).default("compact").describe("输出格式，默认 compact；json 用于脚本解析和调试"),
       assist: z
         .boolean()
         .default(false)
@@ -302,13 +226,14 @@ server.registerTool(
       loader: z.enum(["fabric", "forge", "neoforge", "legacy-fabric"]).default("fabric"),
       stable_only: z.boolean().default(true),
       limit: z.number().int().min(1).max(50).default(10),
+      view: z.enum(["core", "with_ecosystem"]).default("core").describe("core 只返回加载器核心依赖；with_ecosystem 同步返回每个版本的常用生态建议"),
       format: compactFormatSchema,
     }),
     outputSchema: loaderVersionsOutputSchema,
   },
-  async ({ loader, stable_only, limit, format }) => {
+  async ({ loader, stable_only, limit, view, format }) => {
     try {
-      const payload = await getLoaderVersions(loader, stable_only, limit);
+      const payload = await getLoaderVersions(loader, stable_only, limit, view);
       if (format === "compact") {
         const resourceLink = registerFullResultResource(
           "get_loader_versions",

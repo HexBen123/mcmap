@@ -10,11 +10,7 @@ import type {
   SearchResponse,
   SearchResult,
 } from "./types.js";
-import { loadIntermediary, loadYarn } from "./sources/fabric.js";
-import { loadLegacyYarn } from "./sources/legacyFabric.js";
-import { loadMcp } from "./sources/mcp.js";
-import { loadMojmap } from "./sources/mojang.js";
-import { loadQuiltMappings } from "./sources/quilt.js";
+import { canonicalSearchNamespace, loadRecordsForNamespace } from "./namespaces.js";
 
 interface ScoredRecord {
   record: MappingRecord;
@@ -28,15 +24,17 @@ export async function searchMappings(options: SearchOptions): Promise<SearchResu
 }
 
 export async function searchMappingsWithAssistance(options: SearchOptions): Promise<SearchResponse> {
-  const records = await loadRecordsForNamespace(options.namespace, options.version);
-  const results = searchLoadedRecords(records, options);
+  const namespace = canonicalSearchNamespace(options.namespace);
+  const records = await loadRecordsForNamespace(namespace, options.version);
+  const canonicalOptions = { ...options, namespace };
+  const results = searchLoadedRecords(records, canonicalOptions);
 
   if (!options.assist) {
     return { results };
   }
 
-  const queryAnalysis = analyzeQuery(options.query, "assisted");
-  const relatedCandidates = buildRelatedCandidates(records, options, results, queryAnalysis);
+  const queryAnalysis = analyzeQuery(canonicalOptions.query, "assisted");
+  const relatedCandidates = buildRelatedCandidates(records, canonicalOptions, results, queryAnalysis);
 
   return {
     results,
@@ -51,7 +49,7 @@ function searchLoadedRecords(records: MappingRecord[], options: SearchOptions): 
   const descriptorNames = buildDescriptorNameMap(records);
 
   return records
-    .map((record) => scoreRecord(record, query, options.namespace, options.translateMode))
+    .map((record) => scoreRecord(record, query, options.query, options.namespace, options.translateMode))
     .filter(({ record, score }) => score > 0 && allowed.has(record.kind))
     .sort(compareScoredRecords)
     .slice(0, options.limit)
@@ -259,28 +257,6 @@ function bestMemberTokenMatch(
   return { exact, matchedNames: uniqueStrings(matchedNames) };
 }
 
-async function loadRecordsForNamespace(namespace: string, version: string): Promise<MappingRecord[]> {
-  switch (namespace.toLowerCase()) {
-    case "mojmap":
-    case "official":
-      return loadMojmap(version);
-    case "intermediary":
-      return loadIntermediary(version);
-    case "yarn":
-    case "named":
-      return loadYarn(version);
-    case "legacy-yarn":
-      return loadLegacyYarn(version);
-    case "mcp":
-    case "srg":
-      return loadMcp(version);
-    case "quilt-mappings":
-      return loadQuiltMappings(version);
-    default:
-      throw new Error(`Unsupported namespace: ${namespace}`);
-  }
-}
-
 function allowedKinds(options: SearchOptions): Set<MappingKind> {
   const kinds = new Set<MappingKind>();
   if (options.allowClasses) {
@@ -299,6 +275,7 @@ function allowedKinds(options: SearchOptions): Set<MappingKind> {
 function scoreRecord(
   record: MappingRecord,
   query: string,
+  rawQuery: string,
   namespace: string,
   translateMode: SearchOptions["translateMode"],
 ): ScoredRecord {
@@ -344,10 +321,26 @@ function scoreRecord(
 
   return {
     record,
-    score,
+    score: adjustedScore(record, score, rawQuery, query),
     matchReasons: [...matchReasons],
     matchedNames: uniqueStrings(matchedNames),
   };
+}
+
+function adjustedScore(record: MappingRecord, score: number, rawQuery: string, normalizedQuery: string): number {
+  if (score === 0) {
+    return score;
+  }
+  if (!looksLikeClassQuery(rawQuery)) {
+    return score;
+  }
+  if (record.kind === "class") {
+    return score + 120;
+  }
+  if (hasExactMemberLeaf(record, normalizedQuery)) {
+    return Math.max(0, score - 160);
+  }
+  return score;
 }
 
 function scoreName(
@@ -445,6 +438,8 @@ function primaryNamespaceFor(namespace: string): Namespace | undefined {
   switch (namespace.toLowerCase()) {
     case "mojmap":
     case "official":
+    case "mojang":
+    case "mojang_raw":
       return "mojmap";
     case "intermediary":
       return "intermediary";
@@ -454,12 +449,25 @@ function primaryNamespaceFor(namespace: string): Namespace | undefined {
     case "quilt-mappings":
       return "yarn";
     case "mcp":
+    case "mojang_srg":
       return "mcp";
     case "srg":
       return "srg";
     default:
       return undefined;
   }
+}
+
+function looksLikeClassQuery(query: string): boolean {
+  const trimmed = query.trim();
+  return /^[A-Z][A-Za-z0-9_$]*$/.test(trimmed) && !trimmed.includes("_") && !trimmed.includes("(") && !trimmed.includes(";");
+}
+
+function hasExactMemberLeaf(record: MappingRecord, query: string): boolean {
+  if (record.kind === "class") {
+    return false;
+  }
+  return Object.values(record.names).some((value) => value ? normalize(leafName(value)) === query : false);
 }
 
 function searchableNames(

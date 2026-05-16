@@ -36,6 +36,17 @@ const namespaceInfoSchema = z.object({
   aliases: stringArraySchema,
   description: z.string(),
   supports: stringArraySchema,
+  status: z.enum(["search", "alias", "metadata", "known-unsupported"]),
+  searchTarget: z.string().optional(),
+  versionSummary: z.object({
+    stableCount: z.number(),
+    snapshotCount: z.number(),
+    aliasCount: z.number().optional(),
+    latestStable: z.string().optional(),
+    latestSnapshot: z.string().optional(),
+    status: z.enum(["available", "unavailable", "not_implemented"]),
+    reason: z.string().optional(),
+  }).optional(),
 });
 
 export const namespaceListOutputSchema = z.object({
@@ -65,6 +76,7 @@ export const loaderVersionsOutputSchema = z.object({
   loader: z.string(),
   versions: z.array(z.record(z.string(), z.unknown())),
   source: z.string(),
+  view: z.enum(["core", "with_ecosystem"]).optional(),
 });
 
 const ecosystemRecommendationBaseSchema = z.object({

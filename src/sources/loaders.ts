@@ -200,17 +200,59 @@ export async function getLoaderVersions(
   loader: "fabric" | "forge" | "neoforge" | "legacy-fabric",
   stableOnly: boolean,
   limit: number,
+  view: "core" | "with_ecosystem" = "core",
 ): Promise<LoaderVersionResult> {
+  let result: LoaderVersionResult;
   if (loader === "fabric") {
-    return getFabricLoaderVersions(stableOnly, limit);
+    result = await getFabricLoaderVersions(stableOnly, limit);
+  } else if (loader === "forge") {
+    result = await getForgeVersions(stableOnly, limit);
+  } else if (loader === "neoforge") {
+    result = await getNeoForgeVersions(stableOnly, limit);
+  } else {
+    result = await getLegacyFabricLoaderVersions(stableOnly, limit);
   }
-  if (loader === "forge") {
-    return getForgeVersions(stableOnly, limit);
+
+  if (view !== "with_ecosystem") {
+    return { ...result, view: "core" };
   }
-  if (loader === "neoforge") {
-    return getNeoForgeVersions(stableOnly, limit);
-  }
-  return getLegacyFabricLoaderVersions(stableOnly, limit);
+
+  const versions = await Promise.all(result.versions.map(async (value) => {
+    const row = isRecord(value) ? value : {};
+    const minecraft = typeof row.minecraft === "string" ? row.minecraft : undefined;
+    if (!minecraft) {
+      return value;
+    }
+    try {
+      const ecosystem = await getEcosystemRecommendations(loader, minecraft);
+      return {
+        ...row,
+        ecosystemRecommendations: ecosystem.recommendations,
+      };
+    } catch (error) {
+      return {
+        ...row,
+        ecosystemRecommendations: [
+          makeUnversionedRecommendation({
+            id: "ecosystem-lookup",
+            name: "Ecosystem lookup",
+            groupId: "mcmap",
+            artifactId: `${loader}-${minecraft}`,
+            kind: "utility",
+            source: "get_ecosystem_recommendations",
+            repositories: [],
+            reason: `Ecosystem lookup failed: ${errorMessage(error)}`,
+          }),
+        ],
+      };
+    }
+  }));
+
+  return {
+    ...result,
+    view,
+    versions,
+  };
 }
 
 export async function getEcosystemRecommendations(
@@ -661,4 +703,8 @@ function inferNeoForgeMinecraftVersion(version: string, mojangReleaseVersions: s
     return `1.${major}${patch}`;
   }
   return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
