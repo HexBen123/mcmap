@@ -32,6 +32,7 @@ try {
     clientInfo: { name: "local-smoke", version: "0.1.0" },
   });
   assert(init.result?.serverInfo?.name === "mcmap", "initialize should return mcmap serverInfo");
+  assert(init.result?.serverInfo?.version === "1.4.0", "initialize should return mcmap 1.4.0 serverInfo");
   pass("initialize");
 
   notify("notifications/initialized");
@@ -46,8 +47,24 @@ try {
     "get_ecosystem_recommendations",
   ]) {
     assert(toolNames.has(tool), `tools/list should include ${tool}`);
+    const definition = listed.result?.tools?.find((item) => item.name === tool);
+    assert(definition?.outputSchema, `tools/list should include outputSchema for ${tool}`);
   }
+  assertToolFormat(listed, "list_namespaces", ["json", "compact"]);
+  assertToolFormat(listed, "get_namespace_versions", ["json", "compact"]);
+  assertToolFormat(listed, "search_mapping", ["json", "human", "compact"]);
+  assertToolFormat(listed, "get_loader_versions", ["json", "compact"]);
+  assertToolFormat(listed, "get_ecosystem_recommendations", ["json", "compact"]);
   pass("tools/list");
+
+  const resourceTemplates = await request("resources/templates/list");
+  assert(
+    resourceTemplates.result?.resourceTemplates?.some(
+      (template) => template.uriTemplate === "mcmap://result/{tool}/{digest}",
+    ),
+    "resources/templates/list should expose mcmap full-result resource template",
+  );
+  pass("resources/templates/list");
 
   for (const namespace of [
     "mojmap",
@@ -76,6 +93,7 @@ try {
     translate_mode: "none",
   });
   assertSearchResult(yarn, "yarn", "ServerPlayer");
+  assert(yarn._result.structuredContent?.query === "ServerPlayer", "json search should include structuredContent");
   assert(yarn.results[0]?.score > 0, "yarn result should include a score");
   assert(Array.isArray(yarn.results[0]?.matchReasons), "yarn result should include match reasons");
   pass("search_mapping yarn 1.21.1");
@@ -191,6 +209,35 @@ try {
     "assisted Yarn query should expose MinecraftServer.getPlayerManager as related candidate",
   );
   pass("search_mapping assisted yarn mixed query");
+
+  const compactAssistedYarn = await callTextTool("search_mapping", {
+    query: "MinecraftServer getPlayerManager",
+    namespace: "yarn",
+    version: "1.21.1",
+    limit: 5,
+    allow_classes: true,
+    allow_methods: true,
+    allow_fields: true,
+    translate_mode: "none",
+    assist: true,
+    format: "compact",
+  });
+  assert(!compactAssistedYarn.text.trim().startsWith("{"), "compact search should not be JSON text");
+  assert(compactAssistedYarn.text.includes("!summary"), "compact search should include summary");
+  assert(compactAssistedYarn.text.includes("@S=mcmap.search.v1"), "compact search should include schema");
+  assert(compactAssistedYarn.text.includes("@section related"), "compact assisted search should include related section");
+  assert(
+    compactAssistedYarn.result.structuredContent?.query === "MinecraftServer getPlayerManager",
+    "compact search should include canonical structuredContent",
+  );
+  const compactSearchLink = resourceLink(compactAssistedYarn.result);
+  assert(compactSearchLink?.uri?.startsWith("mcmap://result/search_mapping/"), "compact search should include resource_link");
+  const compactSearchResource = await readResource(compactSearchLink.uri);
+  assert(
+    JSON.parse(compactSearchResource.text).query === "MinecraftServer getPlayerManager",
+    "compact search resource should contain full JSON payload",
+  );
+  pass("search_mapping compact assisted resource");
 
   const humanSearch = await callJsonTool("search_mapping", {
     query: "ClientPlayNetworkHandler",
@@ -400,6 +447,20 @@ try {
     pass(`get_loader_versions ${loader}`);
   }
 
+  const compactLoaderVersions = await callTextTool("get_loader_versions", {
+    loader: "fabric",
+    stable_only: true,
+    limit: 2,
+    format: "compact",
+  });
+  assert(compactLoaderVersions.text.includes("@S=mcmap.loader_versions.v1"), "compact loader versions should include schema");
+  assert(
+    compactLoaderVersions.result.structuredContent?.loader === "fabric",
+    "compact loader versions should include structuredContent",
+  );
+  assert(resourceLink(compactLoaderVersions.result), "compact loader versions should include resource_link");
+  pass("get_loader_versions compact");
+
   const recommendations = await callJsonTool("get_ecosystem_recommendations", {
     loader: "fabric",
     minecraft: "1.21.1",
@@ -420,6 +481,20 @@ try {
     "fabric recommendations should include a verified Architectury Fabric coordinate",
   );
   pass("get_ecosystem_recommendations fabric");
+
+  const compactRecommendations = await callTextTool("get_ecosystem_recommendations", {
+    loader: "fabric",
+    minecraft: "1.21.1",
+    format: "compact",
+  });
+  assert(compactRecommendations.text.includes("@S=mcmap.ecosystem.v1"), "compact recommendations should include schema");
+  assert(compactRecommendations.text.includes("verified"), "compact recommendations should preserve confidence");
+  assert(
+    compactRecommendations.result.structuredContent?.minecraft === "1.21.1",
+    "compact recommendations should include structuredContent",
+  );
+  assert(resourceLink(compactRecommendations.result), "compact recommendations should include resource_link");
+  pass("get_ecosystem_recommendations compact");
 
   const forgeRecommendations = await callJsonTool("get_ecosystem_recommendations", {
     loader: "forge",
@@ -460,6 +535,48 @@ try {
     "unsupported mapping search should return structured UNSUPPORTED_VERSION",
   );
   pass("structured tool errors");
+
+  const compactUnsupported = await callTool("search_mapping", {
+    query: "EntityPlayer",
+    namespace: "intermediary",
+    version: "1.12.2",
+    limit: 3,
+    allow_classes: true,
+    allow_methods: false,
+    allow_fields: false,
+    translate_mode: "none",
+    format: "compact",
+  });
+  assert(compactUnsupported.isError, "compact unsupported mapping search should return tool error");
+  assert(toolText(compactUnsupported).startsWith("!error"), "compact tool errors should use compact envelope");
+  assert(!toolText(compactUnsupported).includes("Traceback"), "compact tool errors should not include stack traces");
+  pass("compact tool errors");
+
+  const compactVersions = await callTextTool("get_namespace_versions", {
+    namespace: "yarn",
+    format: "compact",
+  });
+  assert(compactVersions.text.includes("@S=mcmap.versions.v1"), "compact namespace versions should include schema");
+  assert(compactVersions.text.includes("stable_sample="), "compact namespace versions should include bounded stable sample");
+  const compactVersionsLink = resourceLink(compactVersions.result);
+  assert(compactVersionsLink, "compact namespace versions should include resource_link");
+  const compactVersionsResource = await readResource(compactVersionsLink.uri);
+  assert(
+    JSON.parse(compactVersionsResource.text).namespace === "yarn",
+    "compact namespace versions resource should contain full JSON payload",
+  );
+  pass("get_namespace_versions compact resource");
+
+  const compactNamespaces = await callTextTool("list_namespaces", {
+    format: "compact",
+  });
+  assert(compactNamespaces.text.includes("@S=mcmap.namespaces.v1"), "compact namespaces should include schema");
+  assert(
+    compactNamespaces.result.structuredContent?.namespaces?.some((item) => item.id === "yarn"),
+    "compact namespaces should include structuredContent",
+  );
+  assert(resourceLink(compactNamespaces.result), "compact namespaces should include resource_link");
+  pass("list_namespaces compact");
 } finally {
   child.kill();
 }
@@ -493,7 +610,20 @@ async function callJsonTool(name, args) {
   assert(!result?.isError, `${name} returned MCP tool error: ${toolText(result)}`);
   const text = toolText(result);
   assert(text, `${name} should return text content`);
-  return JSON.parse(text);
+  const parsed = JSON.parse(text);
+  Object.defineProperty(parsed, "_result", {
+    value: result,
+    enumerable: false,
+  });
+  return parsed;
+}
+
+async function callTextTool(name, args) {
+  const result = await callTool(name, args);
+  assert(!result?.isError, `${name} returned MCP tool error: ${toolText(result)}`);
+  const text = toolText(result);
+  assert(text, `${name} should return text content`);
+  return { result, text };
 }
 
 async function callTool(name, args) {
@@ -507,6 +637,26 @@ async function callTool(name, args) {
 function toolText(result) {
   const item = result?.content?.find((entry) => entry.type === "text");
   return item?.text;
+}
+
+function resourceLink(result) {
+  return result?.content?.find((entry) => entry.type === "resource_link");
+}
+
+async function readResource(uri) {
+  const message = await request("resources/read", { uri });
+  const content = message.result?.contents?.[0];
+  assert(content?.text, `resources/read should return text for ${uri}`);
+  return content;
+}
+
+function assertToolFormat(listed, name, expectedValues) {
+  const tool = listed.result?.tools?.find((item) => item.name === name);
+  const formatProperty = tool?.inputSchema?.properties?.format;
+  assert(formatProperty, `${name} should expose format input`);
+  for (const value of expectedValues) {
+    assert(formatProperty.enum?.includes(value), `${name} format should include ${value}`);
+  }
 }
 
 function assertSearchResult(result, namespace, query) {

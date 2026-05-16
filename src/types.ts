@@ -80,7 +80,7 @@ export interface SearchOptions {
   allowMethods: boolean;
   allowFields: boolean;
   translateMode: "none" | "ab" | "ba";
-  format: "json" | "human";
+  format: "json" | "human" | "compact";
   assist?: boolean;
 }
 

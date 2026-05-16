@@ -1,15 +1,29 @@
 #!/usr/bin/env node
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import {
   asError,
   asJsonText,
+  asToolResult,
+  formatEcosystemCompact,
+  formatLoaderVersionsCompact,
   formatMappingRecord,
   formatMappingRecordHuman,
+  formatNamespacesCompact,
+  formatSearchCompact,
+  formatVersionsCompact,
   formatRelatedCandidate,
   formatRelatedCandidateHuman,
 } from "./format.js";
+import { listFullResultResources, readFullResultResource, registerFullResultResource } from "./resources.js";
+import {
+  ecosystemRecommendationOutputSchema,
+  loaderVersionsOutputSchema,
+  namespaceListOutputSchema,
+  searchMappingOutputSchema,
+  versionListOutputSchema,
+} from "./schemas.js";
 import { searchMappingsWithAssistance } from "./search.js";
 import { getIntermediaryVersionList, getYarnVersionList } from "./sources/fabric.js";
 import { getLegacyYarnVersionList } from "./sources/legacyFabric.js";
@@ -22,17 +36,39 @@ import { getCacheRoot } from "./utils/cache.js";
 
 const server = new McpServer({
   name: "mcmap",
-  version: "1.0.0",
+  version: "1.4.0",
 });
+
+const compactFormatSchema = z.enum(["json", "compact"]).default("json").describe("输出格式，默认 json；compact 面向 AI 上下文节省 token");
+
+server.registerResource(
+  "mcmap-full-results",
+  new ResourceTemplate("mcmap://result/{tool}/{digest}", {
+    list: () => ({ resources: listFullResultResources() }),
+  }),
+  {
+    title: "mcmap full JSON results",
+    description: "Process-local full JSON payloads referenced by mcmap compact tool results.",
+    mimeType: "application/json",
+    annotations: {
+      audience: ["assistant"],
+      priority: 0.2,
+    },
+  },
+  async (uri) => readFullResultResource(uri.toString()),
+);
 
 server.registerTool(
   "list_namespaces",
   {
     description: "列出所有可用的 Minecraft 映射命名空间及其数据源。",
-    inputSchema: z.object({}),
+    inputSchema: z.object({
+      format: compactFormatSchema,
+    }),
+    outputSchema: namespaceListOutputSchema,
   },
-  async () => {
-    return asJsonText({
+  async ({ format }) => {
+    const payload = {
       cacheRoot: getCacheRoot(),
       namespaces: [
         {
@@ -78,7 +114,16 @@ server.registerTool(
           supports: ["param", "comment"],
         },
       ],
-    });
+    };
+    if (format === "compact") {
+      const resourceLink = registerFullResultResource("list_namespaces", "mcmap.namespaces.v1", payload);
+      return asToolResult({
+        payload,
+        text: formatNamespacesCompact(payload, resourceLink.uri),
+        resourceLink,
+      });
+    }
+    return asJsonText(payload);
   },
 );
 
@@ -90,33 +135,52 @@ server.registerTool(
       namespace: z
         .string()
         .describe("命名空间 ID，如 yarn、legacy-yarn、quilt-mappings、mojmap、mcp、intermediary、parchment"),
+      format: compactFormatSchema,
     }),
+    outputSchema: versionListOutputSchema,
   },
-  async ({ namespace }) => {
+  async ({ namespace, format }) => {
     try {
+      let payload;
       switch (namespace.toLowerCase()) {
         case "mojmap":
         case "official":
-          return asJsonText(await getMojangVersionList());
+          payload = await getMojangVersionList();
+          break;
         case "intermediary":
-          return asJsonText(await getIntermediaryVersionList());
+          payload = await getIntermediaryVersionList();
+          break;
         case "yarn":
         case "named":
-          return asJsonText(await getYarnVersionList());
+          payload = await getYarnVersionList();
+          break;
         case "legacy-yarn":
-          return asJsonText(await getLegacyYarnVersionList());
+          payload = await getLegacyYarnVersionList();
+          break;
         case "quilt-mappings":
-          return asJsonText(await getQuiltMappingsVersionList());
+          payload = await getQuiltMappingsVersionList();
+          break;
         case "mcp":
         case "srg":
-          return asJsonText(await getMcpVersionList());
+          payload = await getMcpVersionList();
+          break;
         case "parchment":
-          return asJsonText(await getParchmentVersionList());
+          payload = await getParchmentVersionList();
+          break;
         default:
           throw new Error(`Unsupported namespace: ${namespace}`);
       }
+      if (format === "compact") {
+        const resourceLink = registerFullResultResource("get_namespace_versions", "mcmap.versions.v1", payload);
+        return asToolResult({
+          payload: payload as unknown as Record<string, unknown>,
+          text: formatVersionsCompact(payload, resourceLink.uri),
+          resourceLink,
+        });
+      }
+      return asJsonText(payload);
     } catch (error) {
-      return asError(error, { namespace });
+      return asError(error, { namespace }, format);
     }
   },
 );
@@ -135,12 +199,13 @@ server.registerTool(
       allow_methods: z.boolean().default(true).describe("是否包含方法结果"),
       allow_fields: z.boolean().default(true).describe("是否包含字段结果"),
       translate_mode: z.enum(["none", "ab", "ba"]).default("none").describe("兼容字段，当前搜索模式下保留"),
-      format: z.enum(["json", "human"]).default("json").describe("输出格式，默认 json"),
+      format: z.enum(["json", "human", "compact"]).default("json").describe("输出格式，默认 json；compact 面向 AI 上下文节省 token"),
       assist: z
         .boolean()
         .default(false)
         .describe("启用可选的 AI 辅助发现。低置信候选会放在 relatedCandidates，不会混入主 results。"),
     }),
+    outputSchema: searchMappingOutputSchema,
   },
   async (args) => {
     try {
@@ -156,18 +221,7 @@ server.registerTool(
         format: args.format,
         assist: args.assist,
       });
-      if (args.format === "human") {
-        return asJsonText({
-          query: args.query,
-          namespace: args.namespace,
-          version: args.version,
-          count: search.results.length,
-          results: search.results.map(formatMappingRecordHuman),
-          queryAnalysis: search.queryAnalysis,
-          relatedCandidates: search.relatedCandidates?.map(formatRelatedCandidateHuman),
-        });
-      }
-      return asJsonText({
+      const payload = {
         query: args.query,
         namespace: args.namespace,
         version: args.version,
@@ -175,9 +229,36 @@ server.registerTool(
         results: search.results.map(formatMappingRecord),
         queryAnalysis: search.queryAnalysis,
         relatedCandidates: search.relatedCandidates?.map(formatRelatedCandidate),
-      });
+      };
+      if (args.format === "compact") {
+        const resourceLink = registerFullResultResource("search_mapping", "mcmap.search.v1", payload);
+        return asToolResult({
+          payload,
+          text: formatSearchCompact(payload, resourceLink.uri),
+          resourceLink,
+        });
+      }
+      if (args.format === "human") {
+        return asToolResult({
+          payload,
+          text: JSON.stringify({
+            query: args.query,
+            namespace: args.namespace,
+            version: args.version,
+            count: search.results.length,
+            results: search.results.map(formatMappingRecordHuman),
+            queryAnalysis: search.queryAnalysis,
+            relatedCandidates: search.relatedCandidates?.map(formatRelatedCandidateHuman),
+          }, null, 2),
+        });
+      }
+      return asJsonText(payload);
     } catch (error) {
-      return asError(error, { namespace: args.namespace, version: args.version });
+      return asError(
+        error,
+        { namespace: args.namespace, version: args.version },
+        args.format === "compact" ? "compact" : "json",
+      );
     }
   },
 );
@@ -190,10 +271,25 @@ server.registerTool(
     inputSchema: z.object({
       loader: z.enum(["fabric", "forge", "neoforge", "legacy-fabric"]).default("fabric"),
       minecraft: z.string().describe("目标 Minecraft 版本，如 1.21.1"),
+      format: compactFormatSchema,
     }),
+    outputSchema: ecosystemRecommendationOutputSchema,
   },
-  async ({ loader, minecraft }) => {
-    return asJsonText(await getEcosystemRecommendations(loader, minecraft));
+  async ({ loader, minecraft, format }) => {
+    const payload = await getEcosystemRecommendations(loader, minecraft);
+    if (format === "compact") {
+      const resourceLink = registerFullResultResource(
+        "get_ecosystem_recommendations",
+        "mcmap.ecosystem.v1",
+        payload,
+      );
+      return asToolResult({
+        payload: payload as unknown as Record<string, unknown>,
+        text: formatEcosystemCompact(payload, resourceLink.uri),
+        resourceLink,
+      });
+    }
+    return asJsonText(payload);
   },
 );
 
@@ -206,13 +302,28 @@ server.registerTool(
       loader: z.enum(["fabric", "forge", "neoforge", "legacy-fabric"]).default("fabric"),
       stable_only: z.boolean().default(true),
       limit: z.number().int().min(1).max(50).default(10),
+      format: compactFormatSchema,
     }),
+    outputSchema: loaderVersionsOutputSchema,
   },
-  async ({ loader, stable_only, limit }) => {
+  async ({ loader, stable_only, limit, format }) => {
     try {
-      return asJsonText(await getLoaderVersions(loader, stable_only, limit));
+      const payload = await getLoaderVersions(loader, stable_only, limit);
+      if (format === "compact") {
+        const resourceLink = registerFullResultResource(
+          "get_loader_versions",
+          "mcmap.loader_versions.v1",
+          payload,
+        );
+        return asToolResult({
+          payload: payload as unknown as Record<string, unknown>,
+          text: formatLoaderVersionsCompact(payload, resourceLink.uri),
+          resourceLink,
+        });
+      }
+      return asJsonText(payload);
     } catch (error) {
-      return asError(error);
+      return asError(error, {}, format);
     }
   },
 );
